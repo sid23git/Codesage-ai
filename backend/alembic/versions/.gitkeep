@@ -1,0 +1,2 @@
+# Migration files are stored in this directory.
+# This file keeps the directory tracked by git even when no migrations exist yet.
