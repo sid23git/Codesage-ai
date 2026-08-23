@@ -90,12 +90,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ------------------------------------------------------------------
-    # Routers
-    # ------------------------------------------------------------------
-    # Health check is mounted at root level for easy liveness probing.
-    # Feature routers live under /api/v1/.
+    # Mount routers at both root and /api/v1 prefix for flexibility.
     app.include_router(v1_router)
+    app.include_router(v1_router, prefix="/api/v1")
 
     return app
 

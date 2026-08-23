@@ -1,5 +1,14 @@
-"""Business logic / service layer.
+"""Business logic and service layer."""
 
-Add service modules here as features are developed.
-Keep all domain logic out of API route handlers.
-"""
+from app.services.auth_service import AuthService, UserAlreadyExistsError
+from app.services.repository_service import (
+    RepositoryAlreadyExistsError,
+    RepositoryService,
+)
+
+__all__ = [
+    "AuthService",
+    "RepositoryAlreadyExistsError",
+    "RepositoryService",
+    "UserAlreadyExistsError",
+]

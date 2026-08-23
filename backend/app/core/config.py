@@ -75,6 +75,15 @@ class Settings(BaseSettings):
             "Secret key used for signing tokens. Must be at least 32 characters."
         ),
     )
+    JWT_ALGORITHM: str = Field(
+        default="HS256",
+        description="Algorithm used for signing JWT access tokens.",
+    )
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=1440,
+        gt=0,
+        description="Access token lifespan in minutes (default 24 hours).",
+    )
 
     # ------------------------------------------------------------------
     # Database — option A: full DSN
