@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.github.exceptions import InvalidGitHubURLError
+from app.github.url_parser import parse_github_url
 
 
 class RepositoryStatus(StrEnum):
@@ -29,7 +31,7 @@ class RepositoryCreate(BaseModel):
     github_url: str = Field(
         min_length=1,
         max_length=1024,
-        description="Full GitHub repository URL.",
+        description="Full GitHub repository URL (https://github.com/owner/repo).",
     )
     description: str | None = Field(
         default=None,
@@ -45,14 +47,23 @@ class RepositoryCreate(BaseModel):
     @field_validator("github_url")
     @classmethod
     def validate_github_url(cls, v: str) -> str:
-        """Ensure github_url is a well-formed HTTP/HTTPS URL."""
-        v = v.strip()
-        parsed = urlparse(v)
-        if not parsed.scheme or parsed.scheme not in ("http", "https"):
-            raise ValueError("github_url must start with http:// or https://")
-        if not parsed.netloc:
-            raise ValueError("github_url must contain a valid domain name")
-        return v
+        """Validate and normalise the GitHub repository URL.
+
+        Enforces:
+        - HTTPS scheme
+        - Hostname must be ``github.com`` (SSRF protection)
+        - Exactly two path segments (owner/repo)
+
+        Raises
+        ------
+        ValueError
+            With a descriptive message forwarded as a 422 Unprocessable Entity.
+        """
+        try:
+            coords = parse_github_url(v)
+        except InvalidGitHubURLError as exc:
+            raise ValueError(str(exc)) from exc
+        return coords.normalized_url
 
 
 class RepositoryUpdate(BaseModel):
@@ -95,3 +106,13 @@ class RepositoryResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+    # GitHub metadata — populated after a successful sync
+    github_repository_id: int | None = None
+    github_owner: str | None = None
+    default_branch: str | None = None
+    stars: int | None = None
+    forks: int | None = None
+    open_issues: int | None = None
+    github_updated_at: datetime | None = None
+    last_synced_at: datetime | None = None

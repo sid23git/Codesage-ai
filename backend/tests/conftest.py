@@ -8,6 +8,7 @@ from collections.abc import AsyncGenerator, Generator
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -92,7 +93,7 @@ def fixture_client(
             try:
                 yield session
                 await session.commit()
-            except Exception:
+            except SQLAlchemyError:
                 await session.rollback()
                 raise
 

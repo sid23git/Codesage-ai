@@ -10,8 +10,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.security import decode_access_token
 from app.db.session import get_db
+from app.github.client import GitHubClient
 from app.models.user import User
 from app.services.auth_service import AuthService
 
@@ -90,3 +92,22 @@ async def get_current_user(
         )
 
     return user
+
+
+def get_github_client() -> GitHubClient:
+    """Provide a configured ``GitHubClient`` instance as a FastAPI dependency.
+
+    Reads ``GITHUB_TOKEN`` and ``GITHUB_REQUEST_TIMEOUT`` from the application
+    settings.  Both values are optional/have defaults so no environment variable
+    is strictly required.
+
+    Returns
+    -------
+    GitHubClient
+        A ready-to-use client instance.
+    """
+    settings = get_settings()
+    return GitHubClient(
+        token=settings.GITHUB_TOKEN,
+        timeout=settings.GITHUB_REQUEST_TIMEOUT,
+    )

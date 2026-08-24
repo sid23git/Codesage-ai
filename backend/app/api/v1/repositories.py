@@ -7,8 +7,17 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_github_client
 from app.db.session import get_db
+from app.github.client import GitHubClient
+from app.github.exceptions import (
+    GitHubMalformedResponseError,
+    GitHubRateLimitError,
+    GitHubRepositoryNotFoundError,
+    GitHubTimeoutError,
+    GitHubUpstreamError,
+    InvalidGitHubURLError,
+)
 from app.models.user import User
 from app.schemas.repository import (
     RepositoryCreate,
@@ -130,3 +139,70 @@ async def delete_repository(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repository not found",
         )
+
+
+@router.post(
+    "/{repository_id}/sync",
+    response_model=RepositoryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Sync repository from GitHub",
+    description=(
+        "Fetch public metadata from the GitHub API and persist it on the "
+        "repository record.  Sets status to 'ready' on success or 'failed' "
+        "on GitHub error.  The caller must be the repository owner."
+    ),
+)
+async def sync_repository(
+    repository_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    github_client: Annotated[GitHubClient, Depends(get_github_client)],
+) -> RepositoryResponse:
+    """Synchronize GitHub metadata for an owned repository.
+
+    Raises HTTP errors mapped from GitHub integration exceptions:
+
+    - ``InvalidGitHubURLError``       → 400 Bad Request
+    - ``GitHubRepositoryNotFoundError`` → 404 Not Found
+    - ``GitHubRateLimitError``        → 429 Too Many Requests
+    - ``GitHubTimeoutError``          → 504 Gateway Timeout
+    - ``GitHubUpstreamError``         → 502 Bad Gateway
+    - ``GitHubMalformedResponseError`` → 502 Bad Gateway
+    """
+    try:
+        repo = await RepositoryService.sync_repository(
+            db, current_user.id, repository_id, github_client
+        )
+    except InvalidGitHubURLError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except GitHubRepositoryNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except GitHubRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+    except GitHubTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=str(exc),
+        ) from exc
+    except (GitHubUpstreamError, GitHubMalformedResponseError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    if repo is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository not found",
+        )
+
+    return RepositoryResponse.model_validate(repo)

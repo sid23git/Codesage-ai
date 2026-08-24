@@ -86,6 +86,23 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # GitHub Integration
+    # ------------------------------------------------------------------
+    GITHUB_TOKEN: str | None = Field(
+        default=None,
+        description=(
+            "Optional GitHub Personal Access Token (PAT). "
+            "Increases API rate limits from 60 to 5 000 req/h. "
+            "Never hardcode — set via environment variable."
+        ),
+    )
+    GITHUB_REQUEST_TIMEOUT: float = Field(
+        default=10.0,
+        gt=0,
+        description="Timeout in seconds for outbound GitHub API requests.",
+    )
+
+    # ------------------------------------------------------------------
     # Database — option A: full DSN
     # ------------------------------------------------------------------
     DATABASE_URL: str | None = Field(
