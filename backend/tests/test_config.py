@@ -12,13 +12,18 @@ class TestSettings:
     """Test suite for Settings model validation and DSN resolution."""
 
     def test_settings_default_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Settings should populate defaults cleanly."""
+        """Settings should populate defaults cleanly.
+
+        ``_env_file=None`` suppresses loading of the local developer ``.env``
+        file so that this test always measures pure field defaults, regardless
+        of what overrides the developer may have on disk.
+        """
         monkeypatch.delenv("DEBUG", raising=False)
         monkeypatch.setenv("SECRET_KEY", "a" * 32)
         monkeypatch.setenv(
             "DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/testdb"
         )
-        settings = Settings()
+        settings = Settings(_env_file=None)  # type: ignore[call-arg]
         assert settings.APP_NAME == "codesage-api"
         assert settings.APP_ENV == AppEnvironment.DEVELOPMENT
         assert settings.DEBUG is False

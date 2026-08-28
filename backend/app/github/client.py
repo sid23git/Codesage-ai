@@ -39,6 +39,7 @@ import httpx
 from pydantic import ValidationError
 
 from app.github.exceptions import (
+    GitHubArchiveSizeExceededError,
     GitHubMalformedResponseError,
     GitHubRateLimitError,
     GitHubRepositoryNotFoundError,
@@ -196,4 +197,119 @@ class GitHubClient:
             )
             raise GitHubMalformedResponseError(
                 "GitHub API response did not match the expected schema."
+            ) from exc
+
+    async def download_tarball(
+        self,
+        owner: str,
+        repo: str,
+        ref: str | None = None,
+        max_bytes: int = 52_428_800,
+    ) -> bytes:
+        """Download compressed source tarball for a GitHub repository.
+
+        Streams the response body with an enforced hard byte limit to prevent
+        unbounded memory usage and resource exhaustion attacks.
+
+        Parameters
+        ----------
+        owner:
+            GitHub user or organisation login.
+        repo:
+            Repository name.
+        ref:
+            Optional git commit SHA, branch name, or tag.
+        max_bytes:
+            Maximum permitted compressed archive size in bytes.
+
+        Returns
+        -------
+        bytes
+            Raw tar.gz archive bytes.
+
+        Raises
+        ------
+        GitHubRepositoryNotFoundError
+            If GitHub returns 404.
+        GitHubRateLimitError
+            If GitHub rate limit is exceeded (403/429).
+        GitHubArchiveSizeExceededError
+            If the downloaded archive size exceeds ``max_bytes``.
+        GitHubTimeoutError
+            If the request times out.
+        GitHubUpstreamError
+            If GitHub returns a server error or unexpected failure.
+        """
+        url = (
+            f"{_GITHUB_API_BASE}/repos/{owner}/{repo}/tarball/{ref}"
+            if ref
+            else f"{_GITHUB_API_BASE}/repos/{owner}/{repo}/tarball"
+        )
+        logger.debug("GitHub tarball request: GET %s", url)
+
+        allowed_hosts = {"api.github.com", "codeload.github.com", "github.com"}
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(self._timeout),
+                follow_redirects=True,
+            ) as client:
+                async with client.stream(
+                    "GET", url, headers=self._build_headers()
+                ) as response:
+                    # Validate redirection host
+                    final_host = response.url.host
+                    if final_host not in allowed_hosts:
+                        raise GitHubUpstreamError(
+                            f"Untrusted redirect host '{final_host}' "
+                            "during archive download."
+                        )
+
+                    if response.status_code == 404:
+                        raise GitHubRepositoryNotFoundError(
+                            f"GitHub repository '{owner}/{repo}' was not found."
+                        )
+
+                    if response.status_code in (403, 429):
+                        raise GitHubRateLimitError(
+                            "GitHub API rate limit exceeded during archive download."
+                        )
+
+                    if response.status_code >= 500:
+                        raise GitHubUpstreamError(
+                            "GitHub returned server error "
+                            f"(HTTP {response.status_code}) during archive download."
+                        )
+
+                    if not response.is_success:
+                        raise GitHubUpstreamError(
+                            "Unexpected response from GitHub "
+                            f"(HTTP {response.status_code}) during archive download."
+                        )
+
+                    content = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        content.extend(chunk)
+                        if len(content) > max_bytes:
+                            raise GitHubArchiveSizeExceededError(
+                                "Repository archive size exceeds maximum limit of "
+                                f"{max_bytes} bytes."
+                            )
+
+                    return bytes(content)
+
+        except httpx.TimeoutException as exc:
+            logger.warning(
+                "GitHub tarball download timeout for %s/%s: %s", owner, repo, exc
+            )
+            raise GitHubTimeoutError(
+                f"Request to GitHub timed out after {self._timeout}s "
+                f"for repository '{owner}/{repo}'."
+            ) from exc
+        except httpx.RequestError as exc:
+            logger.warning(
+                "GitHub tarball download error for %s/%s: %s", owner, repo, exc
+            )
+            raise GitHubUpstreamError(
+                f"Network error while contacting GitHub for '{owner}/{repo}'."
             ) from exc

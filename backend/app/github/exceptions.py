@@ -41,3 +41,7 @@ class GitHubTimeoutError(GitHubIntegrationError):
 
 class GitHubMalformedResponseError(GitHubIntegrationError):
     """Raised when the GitHub API response cannot be parsed into the expected schema."""
+
+
+class GitHubArchiveSizeExceededError(GitHubIntegrationError):
+    """Raised when downloaded repository archive exceeds configured size limits."""

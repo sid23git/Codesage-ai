@@ -11,6 +11,7 @@ from app.api.deps import get_current_user, get_github_client
 from app.db.session import get_db
 from app.github.client import GitHubClient
 from app.github.exceptions import (
+    GitHubArchiveSizeExceededError,
     GitHubMalformedResponseError,
     GitHubRateLimitError,
     GitHubRepositoryNotFoundError,
@@ -18,12 +19,23 @@ from app.github.exceptions import (
     GitHubUpstreamError,
     InvalidGitHubURLError,
 )
+from app.ingestion.exceptions import (
+    ArchiveExtractionError,
+    IngestionError,
+    IngestionLimitExceededError,
+    SecurityViolationError,
+)
 from app.models.user import User
+from app.schemas.ingestion import (
+    IngestionResponse,
+    IngestionSummaryResponse,
+)
 from app.schemas.repository import (
     RepositoryCreate,
     RepositoryResponse,
     RepositoryUpdate,
 )
+from app.services.ingestion_service import IngestionService
 from app.services.repository_service import (
     RepositoryAlreadyExistsError,
     RepositoryService,
@@ -206,3 +218,161 @@ async def sync_repository(
         )
 
     return RepositoryResponse.model_validate(repo)
+
+
+@router.post(
+    "/{repository_id}/ingest",
+    response_model=IngestionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Ingest repository source",
+    description=(
+        "Retrieve repository source archive from GitHub, scan and filter files, "
+        "detect languages, calculate structural metrics, and persist the "
+        "ingestion result. Caller must be the repository owner."
+    ),
+)
+async def ingest_repository(
+    repository_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    github_client: Annotated[GitHubClient, Depends(get_github_client)],
+) -> IngestionResponse:
+    """Trigger full repository source ingestion and analysis."""
+    try:
+        ingestion = await IngestionService.trigger_ingestion(
+            db, current_user.id, repository_id, github_client
+        )
+    except InvalidGitHubURLError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except GitHubRepositoryNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except GitHubRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+    except GitHubTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=str(exc),
+        ) from exc
+    except GitHubArchiveSizeExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
+    except SecurityViolationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except IngestionLimitExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
+    except ArchiveExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except (GitHubUpstreamError, GitHubMalformedResponseError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except IngestionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    if ingestion is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository not found",
+        )
+
+    return IngestionResponse.model_validate(ingestion)
+
+
+@router.get(
+    "/{repository_id}/ingestion",
+    response_model=IngestionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get latest repository ingestion",
+    description=(
+        "Retrieve the most recent ingestion record and structural metrics "
+        "for an owned repository."
+    ),
+)
+async def get_latest_ingestion(
+    repository_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> IngestionResponse:
+    """Return the most recent ingestion run for the repository."""
+    ingestion = await IngestionService.get_latest_ingestion(
+        db, current_user.id, repository_id
+    )
+    if ingestion is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ingestion record not found for this repository",
+        )
+    return IngestionResponse.model_validate(ingestion)
+
+
+@router.get(
+    "/{repository_id}/ingestions",
+    response_model=list[IngestionSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List repository ingestions",
+    description="Retrieve all historical ingestion records for an owned repository.",
+)
+async def list_ingestions(
+    repository_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[IngestionSummaryResponse]:
+    """Return historical ingestion runs for the repository."""
+    ingestions = await IngestionService.list_ingestions(
+        db, current_user.id, repository_id
+    )
+    if ingestions is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository not found",
+        )
+    return [IngestionSummaryResponse.model_validate(i) for i in ingestions]
+
+
+@router.get(
+    "/{repository_id}/ingestions/{ingestion_id}",
+    response_model=IngestionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get repository ingestion by ID",
+    description="Retrieve a specific ingestion record by ID for an owned repository.",
+)
+async def get_ingestion_by_id(
+    repository_id: int,
+    ingestion_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> IngestionResponse:
+    """Return a specific ingestion record for the repository."""
+    ingestion = await IngestionService.get_ingestion(
+        db, current_user.id, repository_id, ingestion_id
+    )
+    if ingestion is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ingestion record not found",
+        )
+    return IngestionResponse.model_validate(ingestion)

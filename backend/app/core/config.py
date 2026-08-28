@@ -103,6 +103,35 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Repository Ingestion & Limits
+    # ------------------------------------------------------------------
+    INGESTION_MAX_FILE_COUNT: int = Field(
+        default=2000,
+        gt=0,
+        description="Maximum number of source files allowed per repository ingestion.",
+    )
+    INGESTION_MAX_REPO_SIZE_BYTES: int = Field(
+        default=104_857_600,  # 100 MB
+        gt=0,
+        description="Maximum total uncompressed source size in bytes (default 100 MB).",
+    )
+    INGESTION_MAX_SINGLE_FILE_SIZE_BYTES: int = Field(
+        default=2_097_152,  # 2 MB
+        gt=0,
+        description="Max individual file size in bytes (default 2 MB).",
+    )
+    INGESTION_MAX_ARCHIVE_SIZE_BYTES: int = Field(
+        default=52_428_800,  # 50 MB
+        gt=0,
+        description="Max downloaded archive size in bytes (default 50 MB).",
+    )
+    INGESTION_TIMEOUT_SECONDS: float = Field(
+        default=60.0,
+        gt=0,
+        description="Timeout in seconds for repository download and extraction.",
+    )
+
+    # ------------------------------------------------------------------
     # Database — option A: full DSN
     # ------------------------------------------------------------------
     DATABASE_URL: str | None = Field(

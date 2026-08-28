@@ -1,6 +1,7 @@
 """Business logic and service layer."""
 
 from app.services.auth_service import AuthService, UserAlreadyExistsError
+from app.services.ingestion_service import IngestionService
 from app.services.repository_service import (
     RepositoryAlreadyExistsError,
     RepositoryService,
@@ -8,6 +9,7 @@ from app.services.repository_service import (
 
 __all__ = [
     "AuthService",
+    "IngestionService",
     "RepositoryAlreadyExistsError",
     "RepositoryService",
     "UserAlreadyExistsError",

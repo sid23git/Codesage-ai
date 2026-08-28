@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.ingestion import RepositoryIngestion
     from app.models.user import User
 
 
@@ -113,6 +114,13 @@ class Repository(Base):
 
     # Relationships
     owner: Mapped[User] = relationship("User", back_populates="repositories")
+    ingestions: Mapped[list[RepositoryIngestion]] = relationship(
+        "RepositoryIngestion",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+        order_by="desc(RepositoryIngestion.created_at)",
+        lazy="selectin",
+    )
 
     def __repr__(self) -> str:
         return (

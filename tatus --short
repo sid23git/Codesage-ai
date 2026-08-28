@@ -1,0 +1,21 @@
+warning: in the working copy of 'backend/.env.example', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/api/v1/repositories.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/core/config.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/github/client.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/github/exceptions.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/models/__init__.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/models/repository.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/schemas/__init__.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/services/__init__.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/test_config.py', LF will be replaced by CRLF the next time Git touches it
+ backend/.env.example               |  19 [32m+++++[m
+ backend/app/api/v1/repositories.py | 170 [32m+++++++++++++++++++++++++++++++++++++[m
+ backend/app/core/config.py         |  29 [32m+++++++[m
+ backend/app/github/client.py       | 116 [32m+++++++++++++++++++++++++[m
+ backend/app/github/exceptions.py   |   4 [32m+[m
+ backend/app/models/__init__.py     |   3 [32m+[m[31m-[m
+ backend/app/models/repository.py   |   8 [32m++[m
+ backend/app/schemas/__init__.py    |  12 [32m+++[m
+ backend/app/services/__init__.py   |   2 [32m+[m
+ backend/tests/test_config.py       |   9 [32m+[m[31m-[m
+ 10 files changed, 369 insertions(+), 3 deletions(-)
