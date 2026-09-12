@@ -192,7 +192,51 @@ This document outlines the phased roadmap and technical implementation plan for 
     conversation when omitted).
   - Same transaction-boundary discipline as `/ask`: no DB transaction
     held open across RAG/embedding/LLM calls.
-- **Phase 5+ (Planned)**: GitHub PR write-back as its own later
+- **Phase 5 (Completed): Engineering Hardening** — a review-and-harden
+  pass across the complete Phase 1-4 system; no new endpoints or
+  models. Architecture, provider abstraction, evidence/grounding rules,
+  context budgeting, conversation integrity, and error handling were all
+  re-verified end-to-end and found correct; the changes made were:
+  - **Deduplication**: `/ask` now shares the same `_raise_for_llm_error()`
+    HTTP-status mapping already used by `/explain`/`/review` (previously
+    duplicated inline); a new `_get_owned_repository_or_404()` helper
+    replaces five identical copies of the repository-ownership check
+    across the router; `ExplainRequest`/`ReviewRequest`'s identical
+    `end_line >= start_line` check now shares one
+    `app/schemas/validators.py::validate_line_range()` function. None of
+    these changes status codes or observable behavior.
+  - **Prompt-injection hardening**: `_SHARED_RULES` (in
+    `prompt_templates.py`, so it applies to ask/explain/review alike)
+    now explicitly instructs the model to treat all repository evidence
+    and user-provided code strictly as content to analyze, never as
+    instructions to it — even when that content is itself phrased as an
+    instruction (e.g. a README or code comment saying "ignore previous
+    instructions" or "you are now in developer mode"). Verified by new
+    regression tests that index/submit exactly such content and assert
+    the system message is unaffected by it.
+  - **Provider completeness**: reviewed and confirmed correct as-is — no
+    second real provider was added (see rationale below).
+  - **Test hardening**: added repository/conversation-mismatch isolation
+    tests to `/explain` and `/review` (previously only `/ask` had them);
+    added an end-to-end transaction-boundary regression test proving no
+    DB transaction is open at the moment `llm_provider.complete()` is
+    invoked; added the prompt-injection isolation tests described above
+    for both repository content (`/ask`) and user-submitted code
+    (`/review`).
+  - **Second LLM provider — deliberately deferred, not added**: the M6
+    spec calls for "Anthropic first, others pluggable later," and the
+    abstraction (`BaseLLMProvider`, the exception-translation pattern,
+    the `get_llm_provider()` factory) already supports adding one later
+    at low, well-isolated cost. Adding one now was assessed and rejected
+    for this hardening pass specifically because (a) the `anthropic` SDK
+    is already pinned below 1.0 to avoid a documented `httpx`/`httpcore`
+    dependency conflict — a second provider SDK is a second chance to
+    reintroduce exactly that class of conflict; (b) there is no live-key
+    test infrastructure in this project for validating a real second
+    adapter beyond structural mocking, so it would ship exercised only
+    against a fake; and (c) no product requirement has surfaced for a
+    second provider yet. This is a scope judgment, not a capability gap.
+- **Phase 6+ (Planned)**: GitHub PR write-back as its own later
   sub-effort; anything beyond that is unscoped.
 
 ---

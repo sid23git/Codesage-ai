@@ -250,6 +250,19 @@ class OrchestrationService:
         except ValueError as exc:
             raise RepositoryNotIndexedError(str(exc)) from exc
 
+        # RAGService.search()'s own reads autobegin a transaction on this
+        # session (SQLAlchemy asyncio sessions autobegin on first execute()
+        # and only end it on commit/rollback) that is still open at this
+        # point, even though the API layer already closed out whatever
+        # transaction its own pre-flight reads had opened before calling
+        # us. Close it out here too, before the LLM call below -- no DB
+        # transaction may be held open across an external network call.
+        # `evidence`/`ingestion_id` above are plain values (a Pydantic
+        # schema list and an int), not attached ORM instances, so nothing
+        # here depends on the session remaining in that transaction.
+        if db.in_transaction():
+            await db.commit()
+
         prompt_builder = PromptBuilder(
             token_budget=token_budget,
             min_relevance_score=min_relevance_score,

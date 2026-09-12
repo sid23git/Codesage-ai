@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.rag import ChunkSearchResult
+from app.schemas.validators import validate_line_range
 
 
 class ExplainRequest(BaseModel):
@@ -42,12 +43,7 @@ class ExplainRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_line_range(self) -> ExplainRequest:
-        if (
-            self.start_line is not None
-            and self.end_line is not None
-            and self.end_line < self.start_line
-        ):
-            raise ValueError("end_line must be greater than or equal to start_line.")
+        validate_line_range(self.start_line, self.end_line)
         return self
 
 

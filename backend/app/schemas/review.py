@@ -7,6 +7,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.rag import ChunkSearchResult
+from app.schemas.validators import validate_line_range
 
 MAX_USER_CODE_CHARS = 20000
 
@@ -68,12 +69,7 @@ class ReviewRequest(BaseModel):
             raise ValueError(
                 "Provide at least a file_path target or user_code to review."
             )
-        if (
-            self.start_line is not None
-            and self.end_line is not None
-            and self.end_line < self.start_line
-        ):
-            raise ValueError("end_line must be greater than or equal to start_line.")
+        validate_line_range(self.start_line, self.end_line)
         return self
 
 

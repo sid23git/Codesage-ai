@@ -286,6 +286,87 @@ class TestExplainEndpointRepositoryOwnership:
         assert response.json()["detail"] == "Repository not found"
 
     @pytest.mark.asyncio
+    async def test_conversation_from_different_repository_returns_404(
+        self,
+        client: TestClient,
+        db_session: AsyncSession,
+        test_user: User,
+        auth_headers: dict[str, str],
+        tmp_path: Path,
+    ) -> None:
+        """A conversation scoped to repo A must not be usable via repo B's
+        /explain endpoint, even though both are owned by the same user."""
+        repo_a_dir = tmp_path / "repo_a"
+        repo_b_dir = tmp_path / "repo_b"
+        repo_a_dir.mkdir()
+        repo_b_dir.mkdir()
+        repo_a = await _make_indexed_repository(
+            db_session,
+            test_user,
+            repo_a_dir,
+            files={"a.py": "def a():\n    pass\n"},
+            name="explain-repo-a-scope",
+        )
+        repo_b = await _make_indexed_repository(
+            db_session,
+            test_user,
+            repo_b_dir,
+            files={"b.py": "def b():\n    pass\n"},
+            name="explain-repo-b-scope",
+        )
+        _override_llm(MockLLMProvider(fixed_response="first turn"))
+        created = client.post(
+            f"/api/v1/repositories/{repo_a.id}/ask",
+            headers=auth_headers,
+            json={"message": "a"},
+        )
+        conversation_id = created.json()["conversation_id"]
+
+        response = client.post(
+            f"/api/v1/repositories/{repo_b.id}/explain",
+            headers=auth_headers,
+            json={"file_path": "b.py", "conversation_id": conversation_id},
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Conversation not found"
+
+    @pytest.mark.asyncio
+    async def test_conversation_owned_by_other_user_returns_404(
+        self,
+        client: TestClient,
+        db_session: AsyncSession,
+        test_user: User,
+        other_user: User,
+        auth_headers: dict[str, str],
+        other_auth_headers: dict[str, str],
+        tmp_path: Path,
+    ) -> None:
+        """Bob cannot append to Alice's conversation via /explain, even if
+        (hypothetically) he knew its ID -- repository ownership alone
+        already blocks this since Bob does not own Alice's repository."""
+        repo = await _make_indexed_repository(
+            db_session,
+            test_user,
+            tmp_path,
+            files={"a.py": "def a():\n    pass\n"},
+        )
+        _override_llm(MockLLMProvider(fixed_response="first turn"))
+        created = client.post(
+            f"/api/v1/repositories/{repo.id}/ask",
+            headers=auth_headers,
+            json={"message": "a"},
+        )
+        conversation_id = created.json()["conversation_id"]
+
+        response = client.post(
+            f"/api/v1/repositories/{repo.id}/explain",
+            headers=other_auth_headers,
+            json={"file_path": "a.py", "conversation_id": conversation_id},
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Repository not found"
+
+    @pytest.mark.asyncio
     async def test_repository_without_ingestion_returns_404(
         self,
         client: TestClient,

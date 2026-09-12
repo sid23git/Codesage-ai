@@ -298,8 +298,10 @@ class TestPromptBuilder:
 
     def test_oversized_single_chunk_as_only_evidence_is_insufficient(self) -> None:
         # Budget large enough for the mandatory system+question skeleton
-        # (~251 tokens) but not for the oversized chunk on top of it.
-        builder = self._builder(token_budget=300)
+        # (~375 tokens, including the Phase 5 prompt-injection-hardening
+        # rules added to the shared system instructions) but not for the
+        # oversized chunk on top of it.
+        builder = self._builder(token_budget=424)
         huge = _chunk(1, score=0.99, chunk_text="z" * 5000)
         with pytest.raises(InsufficientEvidenceError):
             builder.build(question="q", evidence=[huge])
@@ -334,11 +336,13 @@ class TestPromptBuilder:
         assert result.history_used == history[-2:]
 
     def test_history_dropped_oldest_first_under_budget_pressure(self) -> None:
-        # Budget fits the mandatory skeleton (~251 tokens) + the one small
-        # evidence chunk (~21 tokens) + only the most recent history
-        # message (~7 tokens) -- not enough remains for the two older,
-        # much longer messages, which must be dropped oldest-first.
-        builder = self._builder(token_budget=292, max_history_messages=8)
+        # Budget fits the mandatory skeleton (~375 tokens, including the
+        # Phase 5 prompt-injection-hardening rules added to the shared
+        # system instructions) + the one small evidence chunk (~21 tokens)
+        # + only the most recent history message (~7 tokens) -- not enough
+        # remains for the two older, much longer messages, which must be
+        # dropped oldest-first.
+        builder = self._builder(token_budget=416, max_history_messages=8)
         history = [
             LLMMessage(role="user", content="oldest turn " + "a" * 100),
             LLMMessage(role="assistant", content="middle turn " + "b" * 100),

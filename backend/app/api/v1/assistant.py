@@ -26,6 +26,7 @@ from app.llm.exceptions import (
 )
 from app.llm.providers.base import BaseLLMProvider
 from app.models.conversation import Conversation
+from app.models.repository import Repository
 from app.models.user import User
 from app.rag.embeddings.base import BaseEmbeddingProvider
 from app.schemas.conversation import (
@@ -46,6 +47,23 @@ from app.services.orchestration_service import (
 from app.services.repository_service import RepositoryService
 
 router = APIRouter(prefix="/repositories", tags=["assistant"])
+
+
+async def _get_owned_repository_or_404(
+    db: AsyncSession, user_id: int, repository_id: int
+) -> Repository:
+    """Fetch *repository_id* if owned by *user_id*, else raise 404.
+
+    Shared by every endpoint in this router so the ownership check (and
+    its error message) is defined in exactly one place.
+    """
+    repo = await RepositoryService.get_repository(db, user_id, repository_id)
+    if repo is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository not found",
+        )
+    return repo
 
 
 async def _resolve_optional_conversation(
@@ -147,12 +165,7 @@ async def ask_assistant(
     HTTPException (504)
         The LLM provider timed out.
     """
-    repo = await RepositoryService.get_repository(db, current_user.id, repository_id)
-    if repo is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repository not found",
-        )
+    repo = await _get_owned_repository_or_404(db, current_user.id, repository_id)
 
     if ask_request.conversation_id is not None:
         conversation = await ConversationService.get_owned_conversation(
@@ -200,36 +213,16 @@ async def ask_assistant(
             max_output_tokens=settings.LLM_MAX_OUTPUT_TOKENS,
             history=history,
         )
-    except RepositoryNotIndexedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-    except LLMContextError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-    except LLMTimeoutError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail=str(exc),
-        ) from exc
-    except LLMRateLimitError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=str(exc),
-        ) from exc
-    except LLMConfigurationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-    except LLMProviderError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    except (
+        RepositoryNotIndexedError,
+        LLMContextError,
+        LLMTimeoutError,
+        LLMRateLimitError,
+        LLMConfigurationError,
+        LLMProviderError,
+    ) as exc:
+        _raise_for_llm_error(exc)
+        raise  # unreachable; _raise_for_llm_error always raises
 
     # Persist the turn (both the insufficient-evidence and answered cases
     # reach here — only a raised exception above skips persistence, so a
@@ -269,12 +262,7 @@ async def list_conversations(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[ConversationSummaryResponse]:
     """Return the current user's conversations for an owned repository."""
-    repo = await RepositoryService.get_repository(db, current_user.id, repository_id)
-    if repo is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repository not found",
-        )
+    await _get_owned_repository_or_404(db, current_user.id, repository_id)
 
     conversations = await ConversationService.list_conversations(
         db, current_user.id, repository_id
@@ -296,12 +284,7 @@ async def get_conversation(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ConversationDetailResponse:
     """Return one conversation (with messages) if owned by the current user."""
-    repo = await RepositoryService.get_repository(db, current_user.id, repository_id)
-    if repo is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repository not found",
-        )
+    await _get_owned_repository_or_404(db, current_user.id, repository_id)
 
     conversation = await ConversationService.get_owned_conversation(
         db, current_user.id, repository_id, conversation_id
@@ -342,12 +325,7 @@ async def explain_code(
     Raises the same HTTP status mapping as ``/ask`` (see that endpoint's
     docstring) for repository/conversation ownership and LLM failures.
     """
-    repo = await RepositoryService.get_repository(db, current_user.id, repository_id)
-    if repo is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repository not found",
-        )
+    repo = await _get_owned_repository_or_404(db, current_user.id, repository_id)
 
     conversation = await _resolve_optional_conversation(
         db, current_user.id, repository_id, explain_request.conversation_id
@@ -454,12 +432,7 @@ async def review_code(
     Raises the same HTTP status mapping as ``/ask`` (see that endpoint's
     docstring) for repository/conversation ownership and LLM failures.
     """
-    repo = await RepositoryService.get_repository(db, current_user.id, repository_id)
-    if repo is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repository not found",
-        )
+    repo = await _get_owned_repository_or_404(db, current_user.id, repository_id)
 
     conversation = await _resolve_optional_conversation(
         db, current_user.id, repository_id, review_request.conversation_id
