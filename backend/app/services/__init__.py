@@ -2,6 +2,7 @@
 
 from app.services.auth_service import AuthService, UserAlreadyExistsError
 from app.services.ingestion_service import IngestionService
+from app.services.rag_service import RAGService
 from app.services.repository_service import (
     RepositoryAlreadyExistsError,
     RepositoryService,
@@ -10,6 +11,7 @@ from app.services.repository_service import (
 __all__ = [
     "AuthService",
     "IngestionService",
+    "RAGService",
     "RepositoryAlreadyExistsError",
     "RepositoryService",
     "UserAlreadyExistsError",

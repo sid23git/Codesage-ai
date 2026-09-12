@@ -15,6 +15,7 @@ from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.github.client import GitHubClient
 from app.models.user import User
+from app.rag.embeddings.base import BaseEmbeddingProvider
 from app.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
@@ -110,4 +111,28 @@ def get_github_client() -> GitHubClient:
     return GitHubClient(
         token=settings.GITHUB_TOKEN,
         timeout=settings.GITHUB_REQUEST_TIMEOUT,
+    )
+
+
+def get_embedding_provider() -> BaseEmbeddingProvider:
+    """Provide the configured embedding provider as a FastAPI dependency.
+
+    Reads ``EMBEDDING_PROVIDER`` and ``OPENAI_API_KEY`` from application
+    settings.  Defaults to the ``MockEmbeddingProvider`` when the provider
+    is ``"mock"`` (or when no provider is specified).
+
+    **Important**: ``MockEmbeddingProvider`` is for offline/test use only
+    and must NOT be relied upon for semantic search quality in production.
+
+    Returns
+    -------
+    BaseEmbeddingProvider
+        The configured embedding provider instance.
+    """
+    from app.rag.embeddings import get_provider
+
+    settings = get_settings()
+    return get_provider(
+        name=settings.EMBEDDING_PROVIDER,
+        api_key=settings.OPENAI_API_KEY,
     )

@@ -19,54 +19,37 @@ This document outlines the phased roadmap and technical implementation plan for 
 
 ## Milestone Roadmap
 
-### Milestone 1: Backend Foundation (Current)
+### Milestone 1: Backend Foundation (Completed)
 **Goal:** Establish a production-grade backend service skeleton with complete configuration, database abstractions, migration tooling, health check endpoint, test infrastructure, and linting/typing standards.
 
-- [x] Project structure and packaging configuration (`pyproject.toml`)
-- [x] Environment and configuration management (`pydantic-settings`)
-- [x] Database foundation (`SQLAlchemy` async engine, session factory, `Base` model)
-- [x] Migration environment setup (`Alembic` with async runner)
-- [x] Minimal FastAPI application with `/health` liveness endpoint
-- [x] Structured logging setup
-- [x] Comprehensive test suite (`pytest` for health, settings, database lifecycle)
-- [x] Code formatting and linting (`ruff`), type checking (`mypy --strict`)
-- [x] Safe environment template (`.env.example`) and `.gitignore`
-
----
-
-### Milestone 2: User Authentication & Tenant Management
+### Milestone 2: User Authentication & Tenant Management (Completed)
 **Goal:** Implement user identity, registration, JWT authentication, and organization/workspace management.
-- Authentication endpoints (signup, login, refresh, logout)
-- Password hashing with bcrypt / Argon2
-- User and Tenant ORM models & Alembic migrations
-- Auth dependencies (`get_current_user`, role-based access control)
 
----
-
-### Milestone 3: GitHub Integration & Webhook Handling
+### Milestone 3: GitHub Integration & Webhook Handling (Completed)
 **Goal:** Connect GitHub App / OAuth for repository synchronization and PR webhook ingestion.
-- GitHub App integration & installation flow
-- GitHub API client with rate-limit handling
-- Webhook signature verification and event dispatcher
-- Repository metadata ingestion and indexing triggers
 
----
-
-### Milestone 4: Repository Ingestion & Static Analysis Pipeline
+### Milestone 4: Repository Ingestion & Static Analysis Pipeline (Completed)
 **Goal:** Parse repository AST, extract symbols, dependency graphs, and code metrics.
-- Multi-language AST parsing (Tree-sitter)
-- Dependency graph extraction and file hierarchy modeling
-- Static analysis rule engine and linters runner
-- Background task worker (Celery / ARQ / Redis)
 
 ---
 
-### Milestone 5: Vector Store & Codebase RAG Pipeline
+### Milestone 5: Vector Store & Codebase RAG Pipeline (Current)
 **Goal:** Embed code chunks and symbols into vector storage to enable semantic code search and context retrieval.
-- Code chunking strategy (AST-aware boundary splitting)
-- Embedding generation
-- Vector store integration (pgvector / Qdrant)
-- Hybrid retrieval (keyword + dense semantic search + call graph ranking)
+
+#### Architecture Details (Approved):
+- **Vector Store**: PostgreSQL + `pgvector`
+- **Embedding Dimension**: Fixed at 1536 (OpenAI standard)
+- **Code-Aware Chunking**:
+  - Python AST parsing for functions and classes.
+  - Structural parsing for JS/TS/Go/Rust.
+  - Markdown header parsing.
+  - Fallback sliding-window line chunking.
+- **Retrieval Engine**:
+  - Semantic Retrieval (Cosine distance via pgvector)
+  - Keyword / Exact Retrieval (PostgreSQL FTS & symbol match)
+  - Hybrid Ranker (Deterministic Linear Score Fusion)
+- **Database Model**: `code_chunks` table with `embedding vector(1536)` and `tsv_content`
+- **Isolation**: Strict repository-level isolation via query filters.
 
 ---
 

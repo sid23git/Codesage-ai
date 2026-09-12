@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.code_chunk import CodeChunk
     from app.models.ingestion import RepositoryIngestion
     from app.models.user import User
 
@@ -119,6 +120,12 @@ class Repository(Base):
         back_populates="repository",
         cascade="all, delete-orphan",
         order_by="desc(RepositoryIngestion.created_at)",
+        lazy="selectin",
+    )
+    code_chunks: Mapped[list[CodeChunk]] = relationship(
+        "CodeChunk",
+        back_populates="repository",
+        cascade="all, delete-orphan",
         lazy="selectin",
     )
 

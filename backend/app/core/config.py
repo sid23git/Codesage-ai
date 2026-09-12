@@ -132,6 +132,20 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # RAG & Embeddings
+    # ------------------------------------------------------------------
+    EMBEDDING_PROVIDER: str = Field(
+        default="mock",
+        description="Embedding provider to use: 'mock' or 'openai'.",
+    )
+    OPENAI_API_KEY: str | None = Field(
+        default=None,
+        description=(
+            "API key for OpenAI embeddings (required if EMBEDDING_PROVIDER=openai)."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Database — option A: full DSN
     # ------------------------------------------------------------------
     DATABASE_URL: str | None = Field(

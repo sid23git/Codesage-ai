@@ -8,6 +8,12 @@ from app.schemas.ingestion import (
     IngestionSummaryResponse,
     LanguageStat,
 )
+from app.schemas.rag import (
+    ChunkSearchResult,
+    CodeSearchRequest,
+    CodeSearchResponse,
+    RetrievalMode,
+)
 from app.schemas.repository import (
     RepositoryCreate,
     RepositoryResponse,
@@ -17,6 +23,9 @@ from app.schemas.repository import (
 from app.schemas.user import UserCreate, UserLogin, UserResponse
 
 __all__ = [
+    "ChunkSearchResult",
+    "CodeSearchRequest",
+    "CodeSearchResponse",
     "FileMetadata",
     "IngestionResponse",
     "IngestionStatus",
@@ -26,6 +35,7 @@ __all__ = [
     "RepositoryResponse",
     "RepositoryStatus",
     "RepositoryUpdate",
+    "RetrievalMode",
     "TokenPayload",
     "TokenResponse",
     "UserCreate",

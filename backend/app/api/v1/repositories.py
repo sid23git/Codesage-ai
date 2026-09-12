@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_github_client
+from app.api.deps import get_current_user, get_embedding_provider, get_github_client
 from app.db.session import get_db
 from app.github.client import GitHubClient
 from app.github.exceptions import (
@@ -26,10 +26,12 @@ from app.ingestion.exceptions import (
     SecurityViolationError,
 )
 from app.models.user import User
+from app.rag.embeddings.base import BaseEmbeddingProvider
 from app.schemas.ingestion import (
     IngestionResponse,
     IngestionSummaryResponse,
 )
+from app.schemas.rag import CodeSearchRequest, CodeSearchResponse
 from app.schemas.repository import (
     RepositoryCreate,
     RepositoryResponse,
@@ -376,3 +378,62 @@ async def get_ingestion_by_id(
             detail="Ingestion record not found",
         )
     return IngestionResponse.model_validate(ingestion)
+
+
+@router.post(
+    "/{repository_id}/search",
+    response_model=CodeSearchResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Search repository code",
+    description=(
+        "Perform hybrid (semantic + keyword) retrieval over the indexed codebase "
+        "of an owned repository.  Returns ranked code chunks with source-location "
+        "metadata. No LLM generation is performed — this endpoint returns "
+        "retrieval evidence only."
+    ),
+)
+async def search_repository(
+    repository_id: int,
+    search_request: CodeSearchRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    embedding_provider: Annotated[
+        BaseEmbeddingProvider, Depends(get_embedding_provider)
+    ],
+) -> CodeSearchResponse:
+    """Search indexed code chunks using hybrid RAG retrieval.
+
+    Enforces repository ownership: returns 404 if the repository does not
+    belong to the authenticated user (prevents ID enumeration).
+    """
+    from app.services.rag_service import RAGService
+
+    repo = await RepositoryService.get_repository(db, current_user.id, repository_id)
+    if repo is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository not found",
+        )
+
+    try:
+        results, ingestion_id = await RAGService.search(
+            db=db,
+            request=search_request,
+            repository_id=repo.id,
+            owner_id=current_user.id,
+            embedding_provider=embedding_provider,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return CodeSearchResponse(
+        query=search_request.query,
+        repository_id=repository_id,
+        ingestion_id=ingestion_id,
+        total_results=len(results),
+        search_mode=search_request.mode,
+        results=results,
+    )

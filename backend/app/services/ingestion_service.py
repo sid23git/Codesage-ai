@@ -24,6 +24,8 @@ from app.ingestion.exceptions import (
 from app.ingestion.filter import FileFilterPolicy
 from app.ingestion.scanner import RepositoryScanner
 from app.models.ingestion import RepositoryIngestion
+from app.rag.embeddings import get_provider
+from app.rag.embeddings.base import BaseEmbeddingProvider
 from app.schemas.ingestion import IngestionStatus
 from app.schemas.repository import RepositoryStatus
 from app.services.repository_service import RepositoryService
@@ -51,6 +53,29 @@ def _cleanup_dir(dir_path: str | Path | None) -> None:
             )
 
 
+async def _rag_index(
+    db: AsyncSession,
+    repository_id: int,
+    ingestion_id: int,
+    source_root: Path,
+    embedding_provider: BaseEmbeddingProvider,
+) -> int:
+    """Thin wrapper around RAGService.index_repository.
+
+    Imported lazily here (not at module top-level) so that the import cycle
+    between ingestion_service and rag_service does not form at load time.
+    """
+    from app.services.rag_service import RAGService  # local import to break cycle
+
+    return await RAGService.index_repository(
+        db=db,
+        repository_id=repository_id,
+        ingestion_id=ingestion_id,
+        source_root=source_root,
+        embedding_provider=embedding_provider,
+    )
+
+
 class IngestionService:
     """Service layer orchestrating repository ingestion and analysis."""
 
@@ -62,6 +87,7 @@ class IngestionService:
         repository_id: int,
         github_client: GitHubClient,
         settings: Settings | None = None,
+        embedding_provider: BaseEmbeddingProvider | None = None,
     ) -> RepositoryIngestion | None:
         """Trigger a complete ingestion pipeline for an owned repository.
 
@@ -123,6 +149,15 @@ class IngestionService:
         await db.refresh(ingestion)
         await db.refresh(repo)
 
+        # The refresh() calls above each issue a SELECT, which implicitly
+        # (re-)begins a transaction that SQLAlchemy leaves open until the
+        # next commit/rollback. Close it out explicitly here so that no
+        # database transaction is held open across the GitHub download,
+        # archive extraction, repository scan, and (later) external
+        # embedding-API calls that follow — all of which can take a long
+        # time and must not happen with a live DB transaction in progress.
+        await db.commit()
+
         temp_dir: str | None = None
         try:
             temp_dir = tempfile.mkdtemp(prefix="codesage_ingest_")
@@ -154,7 +189,37 @@ class IngestionService:
             )
             scan_result = scanner.scan_repository(source_root)
 
-            # 4. Persist successful results
+            # 4. RAG Indexing: chunk, embed, and persist code vectors
+            # This is intentionally called BEFORE committing the scan results
+            # so that source_root still exists.  RAGService manages its own
+            # bounded transaction; no DB connection is held during embedding.
+            app_embedding_provider = embedding_provider or get_provider(
+                name=app_settings.EMBEDDING_PROVIDER,
+                api_key=app_settings.OPENAI_API_KEY,
+            )
+            try:
+                chunk_count = await _rag_index(
+                    db=db,
+                    repository_id=repo.id,
+                    ingestion_id=ingestion.id,
+                    source_root=source_root,
+                    embedding_provider=app_embedding_provider,
+                )
+                logger.info(
+                    "RAG indexing completed: %d chunks for ingestion_id=%s",
+                    chunk_count,
+                    ingestion.id,
+                )
+            except Exception as rag_exc:
+                # RAG indexing failure is non-fatal: the ingestion itself still
+                # succeeds.  Log it prominently but do not raise.
+                logger.error(
+                    "RAG indexing failed for ingestion_id=%s (non-fatal): %s",
+                    ingestion.id,
+                    rag_exc,
+                )
+
+            # 5. Persist successful results
             ingestion.status = IngestionStatus.COMPLETED.value
             ingestion.commit_sha = commit_sha
             ingestion.file_count = scan_result.file_count

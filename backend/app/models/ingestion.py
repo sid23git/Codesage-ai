@@ -21,6 +21,7 @@ from sqlalchemy.types import JSON
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.code_chunk import CodeChunk
     from app.models.repository import Repository
 
 # Use JSONB for PostgreSQL when available, fallback to standard JSON for SQLite
@@ -136,6 +137,12 @@ class RepositoryIngestion(Base):
     repository: Mapped[Repository] = relationship(
         "Repository",
         back_populates="ingestions",
+    )
+    code_chunks: Mapped[list[CodeChunk]] = relationship(
+        "CodeChunk",
+        back_populates="ingestion",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
 
     def __repr__(self) -> str:
