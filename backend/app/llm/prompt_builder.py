@@ -27,29 +27,9 @@ from app.llm.context_budget import (
     estimate_tokens,
 )
 from app.llm.exceptions import LLMContextError
+from app.llm.prompt_templates import ASK_SYSTEM_INSTRUCTIONS
 from app.llm.providers.base import LLMMessage
 from app.schemas.rag import ChunkSearchResult
-
-_SYSTEM_INSTRUCTIONS = (
-    "You are CodeSage, an AI assistant that answers questions about a "
-    "specific software repository using retrieved evidence from that "
-    "repository.\n\n"
-    "Rules you must follow:\n"
-    '- Answer using the "Repository evidence" provided in the user\'s '
-    "message. Do not invent repository-specific facts (file names, "
-    "function behavior, configuration values, etc.) that are not "
-    "supported by the evidence.\n"
-    "- If the provided evidence is insufficient to answer confidently, "
-    "say so explicitly instead of guessing.\n"
-    "- When you state a fact drawn from the evidence, cite its source "
-    'location using the "file_path:start_line-end_line" format shown in '
-    "the evidence labels.\n"
-    "- Clearly distinguish between facts you found in the repository "
-    "evidence and general software-engineering guidance you provide from "
-    "your own knowledge; label general guidance as such.\n"
-    "- Never claim to have executed code, run tests, or run commands. "
-    "You can only read and reason about the text provided to you."
-)
 
 
 class InsufficientEvidenceError(Exception):
@@ -126,6 +106,12 @@ class PromptBuilder:
     Instantiated once with the resolved configuration for a request
     (mirroring how ``VectorRetriever``/``KeywordRetriever`` are constructed
     fresh per call in M5), then ``build()`` is called once per turn.
+
+    ``system_instructions`` lets different task types (ask/explain/review
+    — see ``app.llm.prompt_templates``) supply their own framing while
+    sharing all of the token-budgeting, evidence-selection, and message-
+    assembly mechanics below unchanged. It defaults to the original
+    Q&A instructions so existing callers are unaffected.
     """
 
     def __init__(
@@ -134,10 +120,12 @@ class PromptBuilder:
         token_budget: int,
         min_relevance_score: float,
         max_history_messages: int,
+        system_instructions: str = ASK_SYSTEM_INSTRUCTIONS,
     ) -> None:
         self._budget = TokenBudget(token_budget)
         self._min_relevance_score = min_relevance_score
         self._max_history_messages = max_history_messages
+        self._system_instructions = system_instructions
 
     def build(
         self,
@@ -145,6 +133,7 @@ class PromptBuilder:
         question: str,
         evidence: Sequence[ChunkSearchResult],
         history: Sequence[LLMMessage] | None = None,
+        require_evidence: bool = True,
     ) -> PromptBuildResult:
         """Build a bounded prompt for *question*, grounded in *evidence*.
 
@@ -159,6 +148,14 @@ class PromptBuilder:
         history:
             Optional prior conversation turns, oldest-first. Truncated to
             the most recent ``max_history_messages`` before budgeting.
+        require_evidence:
+            When ``True`` (default — used by ask/explain), no qualifying
+            evidence is a hard failure (``InsufficientEvidenceError``),
+            preserving the original M6 hallucination-control policy. When
+            ``False`` (used by review of user-provided code, where the
+            primary subject is text the user supplied, not a repository
+            claim), the prompt is built without a "Repository evidence"
+            section instead of raising, so the turn can still proceed.
 
         Returns
         -------
@@ -167,16 +164,17 @@ class PromptBuilder:
         Raises
         ------
         InsufficientEvidenceError
-            If no evidence qualifies (below threshold, unusable, or none
-            fits within the token budget at all).
+            If ``require_evidence`` is ``True`` and no evidence qualifies
+            (below threshold, unusable, or none fits within the token
+            budget at all).
         LLMContextError
             If the system instructions + question alone (with zero
             evidence and zero history) already exceed the token budget.
         """
-        system_message = LLMMessage(role="system", content=_SYSTEM_INSTRUCTIONS)
+        system_message = LLMMessage(role="system", content=self._system_instructions)
 
         qualifying = select_evidence(evidence, self._min_relevance_score)
-        if not qualifying:
+        if not qualifying and require_evidence:
             raise InsufficientEvidenceError(
                 "No retrieved evidence met the minimum relevance score."
             )
@@ -202,21 +200,26 @@ class PromptBuilder:
                 "too large to send even without any evidence or history."
             )
 
-        included_evidence, used_after_evidence = self._budget.fit_greedy(
-            base_used,
-            evidence_pairs,
-            token_fn=lambda pair: estimate_tokens(pair[1]),
-        )
+        if evidence_pairs:
+            included_evidence, used_after_evidence = self._budget.fit_greedy(
+                base_used,
+                evidence_pairs,
+                token_fn=lambda pair: estimate_tokens(pair[1]),
+            )
+        else:
+            included_evidence, used_after_evidence = [], base_used
 
-        if not included_evidence:
+        if evidence_pairs and not included_evidence:
             # Qualifying evidence existed, but none of it fits the budget
             # (e.g. a single oversized chunk) -- there is nothing usable to
             # ground an answer in, so this is treated the same as "no
             # qualifying evidence at all".
-            raise InsufficientEvidenceError(
-                "Qualifying evidence exists but none of it fits within the "
-                "configured token budget."
-            )
+            if require_evidence:
+                raise InsufficientEvidenceError(
+                    "Qualifying evidence exists but none of it fits within "
+                    "the configured token budget."
+                )
+            used_after_evidence = base_used
 
         evidence_used = [chunk for chunk, _ in included_evidence]
 
@@ -235,10 +238,14 @@ class PromptBuilder:
         )
         history_used = list(reversed(included_recent_first))
 
-        evidence_section = "\n\n".join(block for _, block in included_evidence)
-        user_content = (
-            f"Repository evidence:\n\n{evidence_section}\n\n---\n\nQuestion: {question}"
-        )
+        if included_evidence:
+            evidence_section = "\n\n".join(block for _, block in included_evidence)
+            user_content = (
+                f"Repository evidence:\n\n{evidence_section}\n\n"
+                f"---\n\nQuestion: {question}"
+            )
+        else:
+            user_content = f"Question: {question}"
         final_message = LLMMessage(role="user", content=user_content)
 
         messages = [system_message, *history_used, final_message]

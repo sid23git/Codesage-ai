@@ -9,6 +9,7 @@ from app.schemas.conversation import (
     EvidenceCitation,
     MessageResponse,
 )
+from app.schemas.explain import ExplainRequest, ExplainResponse
 from app.schemas.ingestion import (
     FileMetadata,
     IngestionResponse,
@@ -28,6 +29,12 @@ from app.schemas.repository import (
     RepositoryStatus,
     RepositoryUpdate,
 )
+from app.schemas.review import (
+    ReviewFindingResponse,
+    ReviewFocus,
+    ReviewRequest,
+    ReviewResponse,
+)
 from app.schemas.user import UserCreate, UserLogin, UserResponse
 
 __all__ = [
@@ -39,6 +46,8 @@ __all__ = [
     "ConversationDetailResponse",
     "ConversationSummaryResponse",
     "EvidenceCitation",
+    "ExplainRequest",
+    "ExplainResponse",
     "FileMetadata",
     "IngestionResponse",
     "IngestionStatus",
@@ -50,6 +59,10 @@ __all__ = [
     "RepositoryStatus",
     "RepositoryUpdate",
     "RetrievalMode",
+    "ReviewFindingResponse",
+    "ReviewFocus",
+    "ReviewRequest",
+    "ReviewResponse",
     "TokenPayload",
     "TokenResponse",
     "UserCreate",

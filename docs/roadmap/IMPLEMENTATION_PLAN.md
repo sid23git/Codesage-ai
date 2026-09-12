@@ -145,9 +145,55 @@ This document outlines the phased roadmap and technical implementation plan for 
   closes out any transaction opened by the pre-flight reads before
   `OrchestrationService.ask()` runs, mirroring the pattern already
   established in `rag_service.py`/`ingestion_service.py`.
-- **Phase 4+ (Planned)**: code review/explanation endpoints reusing this
-  same orchestration foundation; GitHub PR write-back as its own later
-  sub-effort.
+- **Phase 4 (Completed): Code Explanation + Code Review** — extends the
+  Phase 2/3 foundation with two new task types, sharing all retrieval,
+  budgeting, and orchestration logic; nothing in M5 or the Phase 1/2
+  provider abstraction changed.
+  - **Shared prompting** (`app/llm/prompt_templates.py`): the one place
+    that owns task-specific system instructions (ask/explain/review, each
+    distinct but sharing the same hallucination-control rules) and
+    per-request question/query builders. No provider-specific code lives
+    here. `PromptBuilder` gained two small, backward-compatible
+    extensions to support this: a `system_instructions` constructor
+    parameter (defaults to the original ask instructions) and a
+    `require_evidence` flag on `build()` (defaults to `True`, preserving
+    ask/explain's existing strict behavior).
+  - **`OrchestrationService`** gained a shared private `_run()` helper
+    used by `ask()` (unchanged signature/behavior), new `explain()`, and
+    new `review()` — no duplicated RAG/prompt/LLM-calling logic across
+    task types.
+  - **`POST /repositories/{id}/explain`**: targets a `file_path` (+
+    optional `start_line`/`end_line`/`symbol`/`question`), scopes
+    retrieval to that file via `CodeSearchRequest.file_paths`, and
+    requires qualifying evidence exactly like `/ask` — an unfound
+    target returns the same defined insufficient-evidence result, never
+    a fabricated explanation.
+  - **`POST /repositories/{id}/review`**: targets repository code
+    (`file_path`/`symbol`/line range) and/or up to 20,000 characters of
+    user-provided code/diff (untrusted input, clearly labeled as such in
+    the prompt and never treated as if already indexed), for a
+    `focus` of general/bugs/security/maintainability/performance/style.
+    When reviewing user-provided code, repository evidence is optional
+    supporting context (`require_evidence=False`) rather than a hard
+    gate, since the user's own submitted code — not a repository claim —
+    is the primary subject; a repository-only review target keeps the
+    same strict evidence requirement as `/ask`/`/explain`. The LLM is
+    instructed to respond with a single JSON object; the response is
+    parsed into structured `findings` (title, severity, category,
+    explanation, recommendation, file_path, start/end line, and resolved
+    `evidence_chunk_ids`) plus a human-readable `summary`, degrading
+    gracefully (summary = raw text, findings = []) if the model's
+    response isn't valid JSON rather than failing the request.
+  - **Conversation support**: both endpoints accept an optional
+    `conversation_id` reusing `ConversationService` unchanged (no new
+    persistence model) — supplying one appends the turn to that owned,
+    repository-scoped conversation; omitting it returns a one-off result
+    with nothing persisted (unlike `/ask`, these do not auto-create a
+    conversation when omitted).
+  - Same transaction-boundary discipline as `/ask`: no DB transaction
+    held open across RAG/embedding/LLM calls.
+- **Phase 5+ (Planned)**: GitHub PR write-back as its own later
+  sub-effort; anything beyond that is unscoped.
 
 ---
 
