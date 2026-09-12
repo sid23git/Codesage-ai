@@ -2,26 +2,29 @@
 
 import Link from "next/link";
 
-import { StatusBadge } from "@/components/status/StatusBadge";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingState } from "@/components/states/LoadingState";
+import { StatusBadge } from "@/components/status/StatusBadge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRepositories } from "@/hooks/useRepositories";
 import { ApiError } from "@/lib/api/client";
 
-/**
- * Phase 0 smoke-test dashboard: proves a logged-in session can reach the
- * backend through the BFF end to end. The full connect-repository flow,
- * ingestion status UI, etc. are built out in Phase 1.
- */
 export default function DashboardPage() {
   const { data: repositories, isLoading, isError, error, refetch } =
     useRepositories();
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold">Repositories</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-xl font-semibold">Repositories</h1>
+        {repositories && repositories.length > 0 ? (
+          <Button render={<Link href="/repositories/new" />} size="sm">
+            Add repository
+          </Button>
+        ) : null}
+      </div>
 
       {isLoading ? <LoadingState rows={3} /> : null}
 
@@ -37,6 +40,11 @@ export default function DashboardPage() {
         <EmptyState
           title="No repositories yet"
           description="Connect your first GitHub repository to start asking questions about it."
+          action={
+            <Button render={<Link href="/repositories/new" />}>
+              Connect a repository
+            </Button>
+          }
         />
       ) : null}
 
@@ -51,10 +59,16 @@ export default function DashboardPage() {
                     <StatusBadge status={repo.status} />
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="flex flex-col gap-1">
                   <p className="truncate text-sm text-muted-foreground">
-                    {repo.full_name}
+                    {repo.github_url}
                   </p>
+                  <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{repo.primary_language ?? "Language unknown"}</span>
+                    <span>
+                      Updated {new Date(repo.updated_at).toLocaleDateString()}
+                    </span>
+                  </div>
                 </CardContent>
               </Card>
             </Link>
