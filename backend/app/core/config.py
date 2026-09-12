@@ -146,6 +146,60 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # LLM Orchestration (Milestone 6)
+    # ------------------------------------------------------------------
+    LLM_PROVIDER: str = Field(
+        default="mock",
+        description="LLM provider to use: 'mock' or 'anthropic'.",
+    )
+    LLM_MODEL: str = Field(
+        default="claude-sonnet-5",
+        description="Model identifier passed to the configured LLM provider.",
+    )
+    ANTHROPIC_API_KEY: str | None = Field(
+        default=None,
+        description=(
+            "API key for Anthropic (required if LLM_PROVIDER=anthropic). "
+            "Never hardcode — set via environment variable."
+        ),
+    )
+    LLM_REQUEST_TIMEOUT_SECONDS: float = Field(
+        default=60.0,
+        gt=0,
+        description="Timeout in seconds for outbound LLM provider requests.",
+    )
+    LLM_MAX_OUTPUT_TOKENS: int = Field(
+        default=2000,
+        gt=0,
+        description="Maximum number of tokens the LLM may generate per response.",
+    )
+    LLM_CONTEXT_TOKEN_BUDGET: int = Field(
+        default=12000,
+        gt=0,
+        description=(
+            "Hard upper bound, in tokens, on the assembled input prompt "
+            "(conversation history + retrieved evidence + current message)."
+        ),
+    )
+    LLM_MAX_HISTORY_MESSAGES: int = Field(
+        default=8,
+        gt=0,
+        description=(
+            "Maximum number of prior conversation messages considered per turn."
+        ),
+    )
+    LLM_MIN_RELEVANCE_SCORE: float = Field(
+        default=0.35,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Minimum fused retrieval score a chunk must meet to be used as "
+            "evidence. Below this, the assistant returns an "
+            "insufficient-evidence response instead of generating an answer."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Database — option A: full DSN
     # ------------------------------------------------------------------
     DATABASE_URL: str | None = Field(

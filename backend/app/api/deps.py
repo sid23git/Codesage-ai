@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.github.client import GitHubClient
+from app.llm.providers.base import BaseLLMProvider
 from app.models.user import User
 from app.rag.embeddings.base import BaseEmbeddingProvider
 from app.services.auth_service import AuthService
@@ -135,4 +136,31 @@ def get_embedding_provider() -> BaseEmbeddingProvider:
     return get_provider(
         name=settings.EMBEDDING_PROVIDER,
         api_key=settings.OPENAI_API_KEY,
+    )
+
+
+def get_llm_provider() -> BaseLLMProvider:
+    """Provide the configured LLM provider as a FastAPI dependency.
+
+    Reads ``LLM_PROVIDER``, ``LLM_MODEL``, ``ANTHROPIC_API_KEY``, and
+    ``LLM_REQUEST_TIMEOUT_SECONDS`` from application settings.  Defaults to
+    the ``MockLLMProvider`` when the provider is ``"mock"`` (or when no
+    provider is specified).
+
+    **Important**: ``MockLLMProvider`` is for offline/test use only and
+    must NOT be relied upon for real answer quality in production.
+
+    Returns
+    -------
+    BaseLLMProvider
+        The configured LLM provider instance.
+    """
+    from app.llm.providers import get_llm_provider as _get_llm_provider
+
+    settings = get_settings()
+    return _get_llm_provider(
+        name=settings.LLM_PROVIDER,
+        api_key=settings.ANTHROPIC_API_KEY,
+        model=settings.LLM_MODEL,
+        timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
     )

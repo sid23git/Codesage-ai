@@ -33,7 +33,7 @@ This document outlines the phased roadmap and technical implementation plan for 
 
 ---
 
-### Milestone 5: Vector Store & Codebase RAG Pipeline (Current)
+### Milestone 5: Vector Store & Codebase RAG Pipeline (Completed)
 **Goal:** Embed code chunks and symbols into vector storage to enable semantic code search and context retrieval.
 
 #### Architecture Details (Approved):
@@ -53,12 +53,71 @@ This document outlines the phased roadmap and technical implementation plan for 
 
 ---
 
-### Milestone 6: LLM Orchestration & Code Review Engine
+### Milestone 6: LLM Orchestration & Code Review Engine (Current)
 **Goal:** Implement prompt orchestration, automated PR reviews, documentation generation, and architectural suggestions.
-- LLM abstraction layer (Anthropic Claude, OpenAI, Google Gemini)
-- Automated PR review pipeline (diff analysis, style, security, bug risk scoring)
-- Multi-turn conversational repo assistant
-- Structured markdown output & GitHub PR review comments publishing
+- LLM abstraction layer (Anthropic Claude first; OpenAI/Gemini pluggable later)
+- Automated code review / explanation over indexed repository code and
+  user-provided code/diffs (GitHub PR comment publishing deferred)
+- Multi-turn conversational repo assistant, persisted per user/repository
+- Structured, evidence-grounded output — never answers from unsupported
+  general knowledge when repository evidence is insufficient
+
+#### Architecture Details (Approved):
+- **RAG boundary**: M6 calls `RAGService.search()` exclusively; no direct
+  access to `CodeChunk`, pgvector, or retrieval internals. M5 retrieval
+  contracts are unchanged.
+- **Conversation persistence**: PostgreSQL-backed `Conversation`/`Message`
+  models, owned by user and scoped by repository, using soft (non-FK)
+  evidence references so history survives repository re-indexing.
+- **Context budget**: configurable hard token ceiling
+  (`LLM_CONTEXT_TOKEN_BUDGET`) enforced by the prompt builder, plus a
+  minimum relevance threshold (`LLM_MIN_RELEVANCE_SCORE`) below which the
+  assistant returns a defined insufficient-evidence response instead of
+  generating an answer.
+- **Streaming, rate limiting/usage metering, and GitHub write-back** are
+  explicitly deferred (streaming to M7, cost/observability controls to M8).
+- **Call-graph/import-graph ranking** remains out of scope, as decided in M5.
+
+#### Implementation Phases:
+- **Phase 1 (Completed): LLM Provider Layer** — provider-agnostic
+  `BaseLLMProvider` interface (`app/llm/providers/base.py`), deterministic
+  `MockLLMProvider` for tests, `AnthropicProvider` adapter (Claude Sonnet 5
+  default) with SDK-exception-to-domain-exception translation, a
+  `get_llm_provider()` factory, provider-agnostic `LLMError` hierarchy
+  (`app/llm/exceptions.py`), and matching `Settings`/DI wiring
+  (`LLM_PROVIDER`, `LLM_MODEL`, `ANTHROPIC_API_KEY`,
+  `LLM_REQUEST_TIMEOUT_SECONDS`, `LLM_MAX_OUTPUT_TOKENS`,
+  `LLM_CONTEXT_TOKEN_BUDGET`, `LLM_MAX_HISTORY_MESSAGES`,
+  `LLM_MIN_RELEVANCE_SCORE`, `get_llm_provider()` dependency in
+  `app/api/deps.py`). No orchestration, prompt construction, persistence,
+  or API endpoints yet — those are later phases.
+- **Phase 2 (Completed): Prompt/Context Construction + Orchestration** —
+  `app/llm/context_budget.py` (dependency-free, deterministic token
+  estimation — ~4 chars/token heuristic — plus a generic priority-ordered
+  `TokenBudget.fit_greedy()` mechanism); `app/llm/prompt_builder.py`
+  (`select_evidence()` — relevance filtering against
+  `LLM_MIN_RELEVANCE_SCORE`, dedup by chunk id, deterministic score-desc
+  ordering — and `PromptBuilder.build()`, which formats citation-labeled
+  evidence blocks, enforces `LLM_CONTEXT_TOKEN_BUDGET` as a hard ceiling,
+  truncates history to `LLM_MAX_HISTORY_MESSAGES` and drops it oldest-first
+  under budget pressure, and raises `InsufficientEvidenceError` /
+  `LLMContextError` for the two "cannot proceed" conditions);
+  `app/services/orchestration_service.py::OrchestrationService.ask()` —
+  calls `RAGService.search()` as a black box (hybrid mode, no direct
+  `CodeChunk`/pgvector access), builds a bounded prompt via
+  `PromptBuilder`, calls `BaseLLMProvider.complete()`, and normalizes the
+  result into a plain `AssistantAnswer` dataclass
+  (`status: "answered" | "insufficient_evidence"`, `answer`, `evidence`,
+  `model`, `ingestion_id`, `input_tokens`, `output_tokens`). No completed
+  ingestion → `RepositoryNotIndexedError`; insufficient evidence → an
+  `AssistantAnswer` with `status="insufficient_evidence"` and the LLM is
+  never called; provider timeout/rate-limit/failure/configuration errors
+  propagate as Phase 1's own `LLMError` subclasses, unmodified. Still no
+  conversation persistence or API endpoints — the service accepts an
+  optional in-memory `history: list[LLMMessage]` parameter so persistence
+  can be added in Phase 3 without redesigning this flow.
+- **Phase 3+ (Planned)**: `Conversation`/`Message` persistence, and the
+  `ask`/`review` API endpoints.
 
 ---
 
