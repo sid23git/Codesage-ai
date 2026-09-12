@@ -21,6 +21,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.code_chunk import CodeChunk
+    from app.models.conversation import Conversation
     from app.models.ingestion import RepositoryIngestion
     from app.models.user import User
 
@@ -124,6 +125,12 @@ class Repository(Base):
     )
     code_chunks: Mapped[list[CodeChunk]] = relationship(
         "CodeChunk",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    conversations: Mapped[list[Conversation]] = relationship(
+        "Conversation",
         back_populates="repository",
         cascade="all, delete-orphan",
         lazy="selectin",

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.conversation import Conversation
     from app.models.repository import Repository
 
 
@@ -42,6 +43,12 @@ class User(Base):
     repositories: Mapped[list[Repository]] = relationship(
         "Repository",
         back_populates="owner",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    conversations: Mapped[list[Conversation]] = relationship(
+        "Conversation",
+        back_populates="user",
         cascade="all, delete-orphan",
         lazy="selectin",
     )

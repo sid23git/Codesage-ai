@@ -1,6 +1,14 @@
 """Pydantic request and response schemas."""
 
 from app.schemas.auth import TokenPayload, TokenResponse
+from app.schemas.conversation import (
+    AskRequest,
+    AskResponse,
+    ConversationDetailResponse,
+    ConversationSummaryResponse,
+    EvidenceCitation,
+    MessageResponse,
+)
 from app.schemas.ingestion import (
     FileMetadata,
     IngestionResponse,
@@ -23,14 +31,20 @@ from app.schemas.repository import (
 from app.schemas.user import UserCreate, UserLogin, UserResponse
 
 __all__ = [
+    "AskRequest",
+    "AskResponse",
     "ChunkSearchResult",
     "CodeSearchRequest",
     "CodeSearchResponse",
+    "ConversationDetailResponse",
+    "ConversationSummaryResponse",
+    "EvidenceCitation",
     "FileMetadata",
     "IngestionResponse",
     "IngestionStatus",
     "IngestionSummaryResponse",
     "LanguageStat",
+    "MessageResponse",
     "RepositoryCreate",
     "RepositoryResponse",
     "RepositoryStatus",

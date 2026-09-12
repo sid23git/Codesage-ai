@@ -116,8 +116,38 @@ This document outlines the phased roadmap and technical implementation plan for 
   conversation persistence or API endpoints — the service accepts an
   optional in-memory `history: list[LLMMessage]` parameter so persistence
   can be added in Phase 3 without redesigning this flow.
-- **Phase 3+ (Planned)**: `Conversation`/`Message` persistence, and the
-  `ask`/`review` API endpoints.
+- **Phase 3 (Completed): Conversation Persistence + Assistant API** —
+  `Conversation`/`Message` models (`app/models/conversation.py`,
+  migration `0005`), user-owned and repository-scoped, with `Message`
+  storing a **soft (non-FK) JSON evidence snapshot**
+  (`chunk_id`, `file_path`, `start_line`/`end_line`, `language`, `name`,
+  `score`, a bounded text `snippet`) so historical citations remain
+  readable after a repository is re-indexed and its `code_chunks` rows
+  are replaced. `ConversationService` owns creation, ownership/scope
+  verification, chronological history loading (capped at
+  `LLM_MAX_HISTORY_MESSAGES`), and `record_turn()` — the single place
+  that persists a turn, in one short bounded transaction, appending both
+  messages to the conversation so a brand-new conversation and its first
+  two messages are only ever written together, atomically, once the LLM
+  call has actually succeeded (a failed turn — timeout, rate limit, no
+  ingestion, oversized context — leaves nothing persisted, not even an
+  empty conversation shell). New endpoints in `app/api/v1/assistant.py`:
+  `POST /repositories/{id}/ask` (creates or continues a conversation,
+  returns `answer`/`evidence`/`model`/token usage/`conversation_id`;
+  insufficient-evidence is a normal 200 response, still persisted, never
+  an unsupported answer), `GET /repositories/{id}/conversations` (list,
+  most-recently-active first), `GET
+  /repositories/{id}/conversations/{conversation_id}` (full chronological
+  history). Every endpoint verifies repository ownership first, then
+  (where applicable) that the conversation belongs to both the
+  authenticated user and the requested repository. No DB transaction is
+  held open across the RAG/embedding/LLM calls — an explicit commit
+  closes out any transaction opened by the pre-flight reads before
+  `OrchestrationService.ask()` runs, mirroring the pattern already
+  established in `rag_service.py`/`ingestion_service.py`.
+- **Phase 4+ (Planned)**: code review/explanation endpoints reusing this
+  same orchestration foundation; GitHub PR write-back as its own later
+  sub-effort.
 
 ---
 

@@ -5,8 +5,16 @@ so that Alembic migrations and SQLAlchemy metadata discovery work seamlessly.
 """
 
 from app.models.code_chunk import CodeChunk
+from app.models.conversation import Conversation, Message
 from app.models.ingestion import RepositoryIngestion
 from app.models.repository import Repository
 from app.models.user import User
 
-__all__ = ["CodeChunk", "Repository", "RepositoryIngestion", "User"]
+__all__ = [
+    "CodeChunk",
+    "Conversation",
+    "Message",
+    "Repository",
+    "RepositoryIngestion",
+    "User",
+]
