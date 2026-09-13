@@ -10,8 +10,9 @@ vi.mock("shiki", () => ({
 }));
 
 let currentSearchParams = new URLSearchParams();
+let currentId = "1";
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: "1" }),
+  useParams: () => ({ id: currentId }),
   useSearchParams: () => currentSearchParams,
 }));
 
@@ -84,10 +85,41 @@ describe("ReviewPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
     currentSearchParams = new URLSearchParams();
+    currentId = "1";
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("shows a not-found state (not a blank page) for a malformed repository id in the URL", async () => {
+    currentId = "not-a-number";
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(200, repo));
+
+    renderWithQueryClient(<ReviewPage />);
+
+    expect(await screen.findByText("Repository not found")).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("shows a validation message for a symbol name that's too long", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(200, repo));
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<ReviewPage />);
+    await waitFor(() => expect(screen.getByLabelText("Symbol (optional)")).toBeEnabled());
+
+    await user.type(screen.getByLabelText("File path (repository target)"), "app/x.py");
+    await user.type(screen.getByLabelText("Symbol (optional)"), "a".repeat(256));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    expect(
+      await screen.findByText("Symbol must be at most 255 characters."),
+    ).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalledWith(
+      "/api/bff/repositories/1/review",
+      expect.anything(),
+    );
   });
 
   it("shows the target-selection form with no result before submission", async () => {

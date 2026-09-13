@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ConversationsPage from "@/app/(app)/repositories/[id]/conversations/page";
 import { jsonResponse, renderWithQueryClient } from "@/test-utils";
 
+let currentId = "1";
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: "1" }),
+  useParams: () => ({ id: currentId }),
 }));
 
 const repo = {
@@ -36,10 +37,21 @@ function routeFor(url: string) {
 describe("ConversationsPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
+    currentId = "1";
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("shows a not-found state (not a blank page) for a malformed repository id in the URL", async () => {
+    currentId = "not-a-number";
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(200, repo));
+
+    renderWithQueryClient(<ConversationsPage />);
+
+    expect(await screen.findByText("Repository not found")).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("shows a loading state before conversations arrive", async () => {

@@ -73,3 +73,36 @@ cd ../frontend && npm run generate:types
 SSE/WebSocket streaming, interactive repository/call-graph visualization,
 GitHub PR write-back, Docker/CI-CD, production observability. See the
 plan document for why.
+
+## Notes from the M7 Phase 6 hardening pass
+
+A final polish/QA/accessibility/security pass audited the whole app as
+one product (no new routes or features). Two items are worth recording
+so they aren't rediscovered or "fixed" blindly later:
+
+- **Shiki bundle stays on the full bundle (`import { codeToHtml } from
+  "shiki"`), by measured choice, not oversight.** The audit confirmed the
+  registry/engine overhead is a single ~280KB chunk, code-split to only
+  the routes that render a code block (Ask/Explain/Review/Conversations),
+  and that individual language grammars are still lazy-loaded per
+  language on first use, not bundled eagerly. Switching to Shiki's
+  fine-grained bundle (`shiki/core` + an explicit language loader) or the
+  WASM-free JS regex engine would shrink that further, but would (a)
+  require rewriting the `vi.mock("shiki", ...)` mocks in every test file
+  that renders a code block, and (b) trade tokenization correctness
+  (oniguruma vs. the ~95%-compatible JS engine) for a size win on an
+  asset that's already deferred and cached after first use. Given the
+  existing lazy/scoped behavior, that trade wasn't judged worth making.
+- **`CardTitle` (`components/ui/card.tsx`) renders an `<h2>`, not a
+  `<div>`.** This was a real gap: every Card section (Repository,
+  Ingestion, review findings, etc.) was invisible to screen-reader
+  heading navigation. Every page that has its own page-level `<h1>` gets
+  a correct `h1 > h2` outline from this; the login/register screens have
+  no separate page `<h1>` (the card title doubles as the page's only
+  heading), so their outline starts at `h2` -- an accepted minor gap, not
+  a skipped level.
+- Every `/repositories/[id]/**` page now renders a "Repository not
+  found" empty state for a non-numeric `id` in the URL. Previously a
+  malformed URL (e.g. `/repositories/abc`) silently disabled every query
+  on the page (by design, to avoid a NaN-built API call) and fell
+  through every loading/error guard, rendering nothing at all.

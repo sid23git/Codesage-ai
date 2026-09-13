@@ -9,6 +9,7 @@ import { EvidenceList } from "@/components/evidence/EvidenceList";
 import { RepoToolNav } from "@/components/layout/RepoToolNav";
 import { MarkdownRenderer } from "@/components/markdown/MarkdownRenderer";
 import { FindingCard } from "@/components/review/FindingCard";
+import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { InsufficientEvidenceNotice } from "@/components/states/InsufficientEvidenceNotice";
 import { LoadingState } from "@/components/states/LoadingState";
@@ -83,6 +84,19 @@ export default function ReviewPage() {
     if (lastPayload) review.mutate(lastPayload);
   };
 
+  // A malformed URL (e.g. /repositories/abc/review) disables every
+  // query below rather than erroring, so without this guard the page
+  // would fall through every check and render nothing -- a permanent
+  // blank screen instead of a clear "not found."
+  if (!Number.isFinite(repositoryId)) {
+    return (
+      <EmptyState
+        title="Repository not found"
+        description="It may have been deleted, or it doesn't belong to your account."
+      />
+    );
+  }
+
   if (repository.isLoading) {
     return <LoadingState rows={4} />;
   }
@@ -137,6 +151,9 @@ export default function ReviewPage() {
               <div className="flex flex-col gap-2">
                 <Label htmlFor="symbol">Symbol (optional)</Label>
                 <Input id="symbol" {...register("symbol")} />
+                {errors.symbol ? (
+                  <p className="text-sm text-destructive">{errors.symbol.message}</p>
+                ) : null}
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="start_line">Start line (optional)</Label>

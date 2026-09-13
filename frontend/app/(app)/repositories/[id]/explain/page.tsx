@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 
 import { RepoToolNav } from "@/components/layout/RepoToolNav";
 import { EvidenceList } from "@/components/evidence/EvidenceList";
+import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { InsufficientEvidenceNotice } from "@/components/states/InsufficientEvidenceNotice";
 import { LoadingState } from "@/components/states/LoadingState";
@@ -64,6 +65,19 @@ export default function ExplainPage() {
   const onRetry = () => {
     if (lastPayload) explain.mutate(lastPayload);
   };
+
+  // A malformed URL (e.g. /repositories/abc/explain) disables every
+  // query below rather than erroring, so without this guard the page
+  // would fall through every check and render nothing -- a permanent
+  // blank screen instead of a clear "not found."
+  if (!Number.isFinite(repositoryId)) {
+    return (
+      <EmptyState
+        title="Repository not found"
+        description="It may have been deleted, or it doesn't belong to your account."
+      />
+    );
+  }
 
   if (repository.isLoading) {
     return <LoadingState rows={4} />;

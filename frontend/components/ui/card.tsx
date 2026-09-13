@@ -32,9 +32,15 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+function CardTitle({ className, ...props }: React.ComponentProps<"h2">) {
+  // A real heading (not just a styled <div>) so screen-reader users
+  // navigating by heading can reach every card section. Most pages nest
+  // their Cards under a page-level <h1>, giving a valid h1 > h2
+  // hierarchy; the login/register screens have no separate page <h1>
+  // (the card title doubles as the page's only heading), which starts
+  // their outline at h2 -- an accepted minor gap, not a skipped level.
   return (
-    <div
+    <h2
       data-slot="card-title"
       className={cn(
         "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",

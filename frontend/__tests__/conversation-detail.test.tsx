@@ -7,8 +7,9 @@ import { jsonResponse, renderWithQueryClient } from "@/test-utils";
 vi.mock("shiki", () => ({
   codeToHtml: vi.fn(async (code: string) => `<pre><code>${code}</code></pre>`),
 }));
+let currentId = "1";
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: "1", cid: "5" }),
+  useParams: () => ({ id: currentId, cid: "5" }),
 }));
 
 const repo = {
@@ -83,10 +84,21 @@ function conversationDetail(overrides: Record<string, unknown> = {}) {
 describe("ConversationDetailPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
+    currentId = "1";
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("shows a not-found state (not a blank page) for a malformed repository id in the URL", async () => {
+    currentId = "not-a-number";
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(200, repo));
+
+    renderWithQueryClient(<ConversationDetailPage />);
+
+    expect(await screen.findByText("Repository not found")).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("shows a loading state before the conversation loads", () => {

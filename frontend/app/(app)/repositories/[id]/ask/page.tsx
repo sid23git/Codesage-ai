@@ -13,6 +13,7 @@ import { useForm } from "react-hook-form";
 import { ConversationThread } from "@/components/chat/ConversationThread";
 import { hydratedTurnsFrom, type ChatTurn } from "@/components/chat/types";
 import { RepoToolNav } from "@/components/layout/RepoToolNav";
+import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingState } from "@/components/states/LoadingState";
 import { Button } from "@/components/ui/button";
@@ -122,6 +123,19 @@ export default function AskPage() {
       ]);
     }
   });
+
+  // A malformed URL (e.g. /repositories/abc/ask) disables every query
+  // below rather than erroring, so without this guard the page would
+  // fall through every check and render nothing -- a permanent blank
+  // screen instead of a clear "not found."
+  if (!Number.isFinite(repositoryId)) {
+    return (
+      <EmptyState
+        title="Repository not found"
+        description="It may have been deleted, or it doesn't belong to your account."
+      />
+    );
+  }
 
   if (repository.isLoading) {
     return <LoadingState rows={4} />;

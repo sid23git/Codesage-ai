@@ -20,6 +20,19 @@ export default function ConversationsPage() {
   const repository = useRepository(repositoryId);
   const conversations = useConversations(repositoryId);
 
+  // A malformed URL (e.g. /repositories/abc/conversations) disables
+  // every query below rather than erroring, so without this guard the
+  // page would fall through every check and render nothing -- a
+  // permanent blank screen instead of a clear "not found."
+  if (!Number.isFinite(repositoryId)) {
+    return (
+      <EmptyState
+        title="Repository not found"
+        description="It may have been deleted, or it doesn't belong to your account."
+      />
+    );
+  }
+
   if (repository.isLoading) {
     return <LoadingState rows={4} />;
   }

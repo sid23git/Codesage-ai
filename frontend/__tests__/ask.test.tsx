@@ -11,8 +11,9 @@ vi.mock("shiki", () => ({
 
 const routerReplace = vi.fn();
 let currentSearchParams = new URLSearchParams();
+let currentId = "1";
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: "1" }),
+  useParams: () => ({ id: currentId }),
   useRouter: () => ({ replace: routerReplace, push: vi.fn() }),
   usePathname: () => "/repositories/1/ask",
   useSearchParams: () => currentSearchParams,
@@ -81,10 +82,21 @@ describe("AskPage", () => {
     vi.stubGlobal("fetch", vi.fn());
     routerReplace.mockClear();
     currentSearchParams = new URLSearchParams();
+    currentId = "1";
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("shows a not-found state (not a blank page) for a malformed repository id in the URL", async () => {
+    currentId = "not-a-number";
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(200, repo));
+
+    renderWithQueryClient(<AskPage />);
+
+    expect(await screen.findByText("Repository not found")).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("shows a clean empty state before the first question", async () => {

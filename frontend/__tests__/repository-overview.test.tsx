@@ -7,8 +7,9 @@ import { QueryProvider } from "@/lib/query/provider";
 import { jsonResponse, renderWithQueryClient } from "@/test-utils";
 
 const routerReplace = vi.fn();
+let currentId = "1";
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: "1" }),
+  useParams: () => ({ id: currentId }),
   useRouter: () => ({ replace: routerReplace, push: vi.fn() }),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -42,6 +43,7 @@ describe("RepositoryOverviewPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
     routerReplace.mockClear();
+    currentId = "1";
   });
 
   afterEach(() => {
@@ -376,6 +378,32 @@ describe("RepositoryOverviewPage", () => {
     expect(historyLink).toHaveAttribute("href", "/repositories/1/conversations");
     // Unlike History, Ask/Explain/Review stay disabled until ingestion completes.
     expect(screen.getByText("Ask").closest("button")).toBeDisabled();
+  });
+
+  it("shows a not-found state (not a blank page) for a malformed repository id in the URL", async () => {
+    currentId = "not-a-number";
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(200, repo));
+
+    renderWithQueryClient(<RepositoryOverviewPage />);
+
+    expect(await screen.findByText("Repository not found")).toBeInTheDocument();
+    // Never even attempted a request built from NaN.
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("renders card sections as real headings for screen-reader navigation", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockImplementation(async (url: string) => {
+      const path = routeFor(url);
+      if (path === "repositories/1") return jsonResponse(200, repo);
+      if (path === "repositories/1/ingestion")
+        return jsonResponse(404, { detail: "not found" });
+      return jsonResponse(404, { detail: "not found" });
+    });
+
+    renderWithQueryClient(<RepositoryOverviewPage />);
+
+    expect(await screen.findByRole("heading", { name: /Repository/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Ingestion/ })).toBeInTheDocument();
   });
 
   it("redirects to /login when the session has expired (401 from the backend)", async () => {
