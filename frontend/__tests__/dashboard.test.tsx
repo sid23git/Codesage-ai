@@ -64,6 +64,33 @@ describe("DashboardPage", () => {
     expect(screen.getByText("ready")).toBeInTheDocument();
   });
 
+  it("navigates to the repository's overview page when its card is clicked", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse(200, [
+        {
+          id: 42,
+          owner_id: 1,
+          name: "my-repo",
+          full_name: "octocat/my-repo",
+          github_url: "https://github.com/octocat/my-repo",
+          description: null,
+          primary_language: "Python",
+          status: "ready",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+        },
+      ]),
+    );
+
+    renderWithQueryClient(<DashboardPage />);
+
+    await waitFor(() => expect(screen.getByText("my-repo")).toBeInTheDocument());
+    expect(screen.getByRole("link", { name: /my-repo/ })).toHaveAttribute(
+      "href",
+      "/repositories/42",
+    );
+  });
+
   it("shows an error state with a retry action when the request fails", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       jsonResponse(502, { detail: "Upstream failure" }),

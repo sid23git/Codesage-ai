@@ -35,8 +35,19 @@ export function useIngestRepository(id: number) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => repositoriesApi.ingestRepository(id),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: queryKeys.ingestion(id) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.ingestion(id) });
+      // A new run just got created -- the history list is stale too.
+      queryClient.invalidateQueries({ queryKey: queryKeys.ingestions(id) });
+    },
+  });
+}
+
+export function useIngestionHistory(id: number) {
+  return useQuery({
+    queryKey: queryKeys.ingestions(id),
+    queryFn: () => repositoriesApi.listIngestions(id),
+    enabled: Number.isFinite(id),
   });
 }
 

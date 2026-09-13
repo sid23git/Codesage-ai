@@ -1,17 +1,20 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingState } from "@/components/states/LoadingState";
+import { IngestionHistoryList } from "@/components/status/IngestionHistoryList";
 import { IngestionPanel } from "@/components/status/IngestionPanel";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
+  useIngestionHistory,
   useIngestRepository,
   useLatestIngestion,
   useRepository,
@@ -19,14 +22,35 @@ import {
 } from "@/hooks/useRepositories";
 import { ApiError } from "@/lib/api/client";
 
+const TERMINAL_STATUSES = new Set(["completed", "failed"]);
+
 export default function RepositoryOverviewPage() {
   const params = useParams<{ id: string }>();
   const repositoryId = Number(params.id);
 
   const repository = useRepository(repositoryId);
   const ingestion = useLatestIngestion(repositoryId, { pollWhilePending: true });
+  const history = useIngestionHistory(repositoryId);
   const ingest = useIngestRepository(repositoryId);
   const sync = useSyncRepository(repositoryId);
+
+  // The latest-ingestion query is polled in the background (not a
+  // mutation), so there's no mutation onSuccess to hook into for "it just
+  // finished." Watch for the transition into a terminal state here and
+  // refresh the history list at that moment, per the Phase 2 requirement
+  // to invalidate history when an ingestion completes/fails.
+  const previousStatus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const status = ingestion.data?.status;
+    if (
+      status &&
+      TERMINAL_STATUSES.has(status) &&
+      previousStatus.current !== status
+    ) {
+      history.refetch();
+    }
+    previousStatus.current = status;
+  }, [ingestion.data?.status, history]);
 
   const onStartIngestion = async () => {
     try {
@@ -48,6 +72,12 @@ export default function RepositoryOverviewPage() {
         error instanceof ApiError ? error.message : "Failed to sync repository.";
       toast.error(message);
     }
+  };
+
+  const onRefresh = () => {
+    repository.refetch();
+    ingestion.refetch();
+    history.refetch();
   };
 
   if (repository.isLoading) {
@@ -90,16 +120,26 @@ export default function RepositoryOverviewPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold">{repo.name}</h1>
-        <a
-          href={repo.github_url}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="text-sm text-muted-foreground underline"
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold">{repo.name}</h1>
+          <a
+            href={repo.github_url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="text-sm text-muted-foreground underline"
+          >
+            {repo.github_url}
+          </a>
+        </div>
+        <Button
+          onClick={onRefresh}
+          variant="ghost"
+          size="sm"
+          disabled={repository.isFetching || ingestion.isFetching || history.isFetching}
         >
-          {repo.github_url}
-        </a>
+          Refresh
+        </Button>
       </div>
 
       <Card>
@@ -133,6 +173,18 @@ export default function RepositoryOverviewPage() {
                 <dd>{repo.stars.toLocaleString()}</dd>
               </>
             ) : null}
+            {repo.forks !== null && repo.forks !== undefined ? (
+              <>
+                <dt className="text-muted-foreground">Forks</dt>
+                <dd>{repo.forks.toLocaleString()}</dd>
+              </>
+            ) : null}
+            {repo.default_branch ? (
+              <>
+                <dt className="text-muted-foreground">Default branch</dt>
+                <dd>{repo.default_branch}</dd>
+              </>
+            ) : null}
           </dl>
           <Button
             onClick={onSync}
@@ -162,6 +214,10 @@ export default function RepositoryOverviewPage() {
           isStarting={ingest.isPending}
         />
       )}
+
+      {history.data && history.data.length > 0 ? (
+        <IngestionHistoryList runs={history.data} />
+      ) : null}
 
       <Separator />
 
