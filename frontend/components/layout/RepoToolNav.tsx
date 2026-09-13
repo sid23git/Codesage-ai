@@ -8,10 +8,15 @@ const TOOLS = [
   { key: "ask", label: "Ask", href: (id: number) => `/repositories/${id}/ask` },
   { key: "explain", label: "Explain", href: (id: number) => `/repositories/${id}/explain` },
   { key: "review", label: "Review", href: (id: number) => `/repositories/${id}/review` },
+  {
+    key: "conversations",
+    label: "History",
+    href: (id: number) => `/repositories/${id}/conversations`,
+  },
 ] as const;
 
-/** Shared header for the Ask/Explain/Review pages: a link back to the
- * repository overview plus tabs between the three AI tools, so moving
+/** Shared header for the Ask/Explain/Review/History pages: a link back
+ * to the repository overview plus tabs between the AI tools, so moving
  * between them (or back out) is always one click away. */
 export function RepoToolNav({
   repositoryId,
@@ -20,7 +25,7 @@ export function RepoToolNav({
 }: {
   repositoryId: number;
   repoName: string;
-  active: "ask" | "explain" | "review";
+  active: "ask" | "explain" | "review" | "conversations";
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">

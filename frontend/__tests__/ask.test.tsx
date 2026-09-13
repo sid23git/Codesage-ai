@@ -322,4 +322,117 @@ describe("AskPage", () => {
     const backLink = await screen.findByRole("link", { name: /my-repo/ });
     expect(backLink).toHaveAttribute("href", "/repositories/1");
   });
+
+  it("shows a History tab alongside Ask/Explain/Review for navigating back to conversation history", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(200, repo));
+
+    renderWithQueryClient(<AskPage />);
+
+    const historyLink = await screen.findByRole("link", { name: "History" });
+    expect(historyLink).toHaveAttribute("href", "/repositories/1/conversations");
+  });
+});
+
+describe("AskPage resuming a conversation from history", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    routerReplace.mockClear();
+    currentSearchParams = new URLSearchParams({ conversation: "42" });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    currentSearchParams = new URLSearchParams();
+  });
+
+  function conversationDetail() {
+    return {
+      id: 42,
+      repository_id: 1,
+      title: "Resumed conversation",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:05:00Z",
+      messages: [
+        {
+          id: 1,
+          role: "user",
+          content: "Earlier question",
+          evidence: null,
+          model: null,
+          input_tokens: null,
+          output_tokens: null,
+          created_at: "2026-01-01T00:00:00Z",
+        },
+        {
+          id: 2,
+          role: "assistant",
+          content: "Earlier answer",
+          evidence: [],
+          model: "mock-llm",
+          input_tokens: 10,
+          output_tokens: 5,
+          created_at: "2026-01-01T00:01:00Z",
+        },
+      ],
+    };
+  }
+
+  it("hydrates prior messages from the conversation_id in the URL on load", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockImplementation(async (url: string) => {
+      const path = routeFor(url);
+      if (path === "repositories/1") return jsonResponse(200, repo);
+      if (path === "repositories/1/conversations/42")
+        return jsonResponse(200, conversationDetail());
+      return jsonResponse(404, { detail: "not found" });
+    });
+
+    renderWithQueryClient(<AskPage />);
+
+    const log = await screen.findByRole("log", { name: "Conversation" });
+    expect(within(log).getByText("Earlier question")).toBeInTheDocument();
+    expect(within(log).getByText("Earlier answer")).toBeInTheDocument();
+    // Hydrating an existing conversation must not create a new one.
+    expect(fetch).not.toHaveBeenCalledWith(
+      "/api/bff/repositories/1/ask",
+      expect.anything(),
+    );
+  });
+
+  it("continues the same conversation_id when sending a new message after resuming", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockImplementation(async (url: string) => {
+      const path = routeFor(url);
+      if (path === "repositories/1") return jsonResponse(200, repo);
+      if (path === "repositories/1/conversations/42")
+        return jsonResponse(200, conversationDetail());
+      if (path === "repositories/1/ask")
+        return jsonResponse(200, answeredResponse({ conversation_id: 42, answer: "Follow-up answer" }));
+      return jsonResponse(404, { detail: "not found" });
+    });
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<AskPage />);
+    await screen.findByText("Earlier question");
+
+    await askQuestion(user, "Follow-up question");
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/bff/repositories/1/ask",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            message: "Follow-up question",
+            conversation_id: 42,
+          }),
+        }),
+      ),
+    );
+    // The URL already carries the conversation id -- no re-navigation needed.
+    expect(routerReplace).not.toHaveBeenCalled();
+
+    const log = await screen.findByRole("log", { name: "Conversation" });
+    expect(within(log).getByText("Earlier question")).toBeInTheDocument();
+    expect(within(log).getByText("Follow-up question")).toBeInTheDocument();
+    expect(await within(log).findByText("Follow-up answer")).toBeInTheDocument();
+  });
 });

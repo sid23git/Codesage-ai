@@ -361,6 +361,23 @@ describe("RepositoryOverviewPage", () => {
     );
   });
 
+  it("always shows a History link, even before ingestion completes", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockImplementation(async (url: string) => {
+      const path = routeFor(url);
+      if (path === "repositories/1") return jsonResponse(200, repo);
+      if (path === "repositories/1/ingestion")
+        return jsonResponse(404, { detail: "Ingestion record not found for this repository" });
+      return jsonResponse(404, { detail: "not found" });
+    });
+
+    renderWithQueryClient(<RepositoryOverviewPage />);
+
+    const historyLink = await screen.findByRole("link", { name: "History" });
+    expect(historyLink).toHaveAttribute("href", "/repositories/1/conversations");
+    // Unlike History, Ask/Explain/Review stay disabled until ingestion completes.
+    expect(screen.getByText("Ask").closest("button")).toBeDisabled();
+  });
+
   it("redirects to /login when the session has expired (401 from the backend)", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       jsonResponse(401, { detail: "Could not validate credentials" }),

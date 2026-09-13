@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { ConversationThread } from "@/components/chat/ConversationThread";
-import type { ChatTurn } from "@/components/chat/types";
+import { hydratedTurnsFrom, type ChatTurn } from "@/components/chat/types";
 import { RepoToolNav } from "@/components/layout/RepoToolNav";
 import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingState } from "@/components/states/LoadingState";
@@ -22,32 +22,12 @@ import { useRepository } from "@/hooks/useRepositories";
 import { ApiError } from "@/lib/api/client";
 import { apiErrorMessage } from "@/lib/api/errors";
 import { toEvidenceViews } from "@/lib/api/evidence";
-import type { MessageResponse } from "@/lib/api/types";
 import { askMessageSchema, type AskMessageFormValues } from "@/lib/validation/ask";
 
 let turnCounter = 0;
 function nextTurnId(prefix: string) {
   turnCounter += 1;
   return `${prefix}-${turnCounter}`;
-}
-
-function hydratedTurnsFrom(messages: MessageResponse[]): ChatTurn[] {
-  return messages.map((message) => {
-    if (message.role === "user") {
-      return { id: `hydrated-${message.id}`, role: "user", content: message.content };
-    }
-    // Persisted messages carry no explicit insufficient_evidence marker
-    // (unlike the live AskResponse) -- resumed history renders every
-    // assistant message through the normal "answered" path.
-    return {
-      id: `hydrated-${message.id}`,
-      role: "assistant",
-      status: "answered",
-      content: message.content,
-      evidence: toEvidenceViews(message.evidence ?? []),
-      model: message.model,
-    };
-  });
 }
 
 export default function AskPage() {

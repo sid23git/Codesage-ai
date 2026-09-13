@@ -252,6 +252,12 @@ export default function RepositoryOverviewPage() {
               </Button>
             </>
           )}
+          {/* Unlike Ask/Explain/Review, history isn't gated on the
+              current ingestion -- past conversations remain viewable
+              regardless of whether a new ingestion is in progress. */}
+          <Button variant="secondary" render={<Link href={`/repositories/${repositoryId}/conversations`} />}>
+            History
+          </Button>
         </div>
       </div>
     </div>
