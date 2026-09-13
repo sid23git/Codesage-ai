@@ -228,20 +228,30 @@ export default function RepositoryOverviewPage() {
         </h2>
         <div className="flex gap-2">
           {ingestion.data?.status === "completed" ? (
-            <Button variant="secondary" render={<Link href={`/repositories/${repositoryId}/ask`} />}>
-              Ask
-            </Button>
+            <>
+              <Button variant="secondary" render={<Link href={`/repositories/${repositoryId}/ask`} />}>
+                Ask
+              </Button>
+              <Button variant="secondary" render={<Link href={`/repositories/${repositoryId}/explain`} />}>
+                Explain
+              </Button>
+              <Button variant="secondary" render={<Link href={`/repositories/${repositoryId}/review`} />}>
+                Review
+              </Button>
+            </>
           ) : (
-            <Button variant="secondary" disabled title="Available once ingestion completes">
-              Ask
-            </Button>
+            <>
+              <Button variant="secondary" disabled title="Available once ingestion completes">
+                Ask
+              </Button>
+              <Button variant="secondary" disabled title="Available once ingestion completes">
+                Explain
+              </Button>
+              <Button variant="secondary" disabled title="Available once ingestion completes">
+                Review
+              </Button>
+            </>
           )}
-          <Button variant="secondary" disabled title="Coming in a future phase">
-            Explain
-          </Button>
-          <Button variant="secondary" disabled title="Coming in a future phase">
-            Review
-          </Button>
         </div>
       </div>
     </div>

@@ -34,6 +34,7 @@ export type ReviewRequest = components["schemas"]["ReviewRequest"];
 export type ReviewResponse = components["schemas"]["ReviewResponse"];
 export type ReviewFindingResponse =
   components["schemas"]["ReviewFindingResponse"];
+export type ReviewFocus = components["schemas"]["ReviewFocus"];
 
 export type ConversationSummaryResponse =
   components["schemas"]["ConversationSummaryResponse"];

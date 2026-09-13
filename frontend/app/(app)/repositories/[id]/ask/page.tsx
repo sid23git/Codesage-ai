@@ -1,7 +1,6 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import Link from "next/link";
 import {
   useParams,
   usePathname,
@@ -13,6 +12,7 @@ import { useForm } from "react-hook-form";
 
 import { ConversationThread } from "@/components/chat/ConversationThread";
 import type { ChatTurn } from "@/components/chat/types";
+import { RepoToolNav } from "@/components/layout/RepoToolNav";
 import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingState } from "@/components/states/LoadingState";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAsk, useConversation } from "@/hooks/useAssistant";
 import { useRepository } from "@/hooks/useRepositories";
 import { ApiError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/errors";
 import { toEvidenceViews } from "@/lib/api/evidence";
 import type { MessageResponse } from "@/lib/api/types";
 import { askMessageSchema, type AskMessageFormValues } from "@/lib/validation/ask";
@@ -47,24 +48,6 @@ function hydratedTurnsFrom(messages: MessageResponse[]): ChatTurn[] {
       model: message.model,
     };
   });
-}
-
-function apiErrorMessage(error: unknown): string {
-  if (!(error instanceof ApiError)) return "Something went wrong. Please try again.";
-  switch (error.status) {
-    case 404:
-      return "This repository or conversation could not be found.";
-    case 422:
-      return error.message || "That question couldn't be processed.";
-    case 429:
-      return "The AI provider is rate-limited right now. Please try again shortly.";
-    case 502:
-      return "The AI provider is temporarily unavailable. Please try again.";
-    case 504:
-      return "The request timed out. Please try again.";
-    default:
-      return error.message || "Something went wrong. Please try again.";
-  }
 }
 
 export default function AskPage() {
@@ -184,13 +167,8 @@ export default function AskPage() {
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-4">
       <div>
-        <Link
-          href={`/repositories/${repositoryId}`}
-          className="text-sm text-muted-foreground underline"
-        >
-          ← {repo.name}
-        </Link>
-        <h1 className="text-xl font-semibold">Ask</h1>
+        <RepoToolNav repositoryId={repositoryId} repoName={repo.name} active="ask" />
+        <h1 className="mt-2 text-xl font-semibold">Ask</h1>
       </div>
 
       <ConversationThread
