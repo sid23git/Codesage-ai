@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -226,9 +227,15 @@ export default function RepositoryOverviewPage() {
           More on this repository
         </h2>
         <div className="flex gap-2">
-          <Button variant="secondary" disabled title="Coming in a future phase">
-            Ask
-          </Button>
+          {ingestion.data?.status === "completed" ? (
+            <Button variant="secondary" render={<Link href={`/repositories/${repositoryId}/ask`} />}>
+              Ask
+            </Button>
+          ) : (
+            <Button variant="secondary" disabled title="Available once ingestion completes">
+              Ask
+            </Button>
+          )}
           <Button variant="secondary" disabled title="Coming in a future phase">
             Explain
           </Button>

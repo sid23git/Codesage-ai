@@ -128,3 +128,21 @@
     @apply font-sans;
   }
 }
+
+/* Read-only code display (components/code/CodeBlock.tsx). Shiki's own
+   generated markup is styled here; the highlighted output is otherwise
+   left as Shiki produced it. */
+.shiki-container pre {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+}
+.shiki-container .line-number {
+  display: inline-block;
+  width: 2.5rem;
+  margin-right: 1rem;
+  text-align: right;
+  user-select: none;
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}

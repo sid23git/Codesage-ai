@@ -19,6 +19,10 @@ export interface EvidenceView {
   name: string | null;
   score: number;
   text: string;
+  /** Only present for live `ChunkSearchResult` evidence (e.g. /ask) --
+   * persisted `EvidenceCitation` rows don't carry this, so it's undefined
+   * when rendering citations loaded from a stored conversation. */
+  retrievalSources?: string[];
 }
 
 export function toEvidenceView(
@@ -34,6 +38,7 @@ export function toEvidenceView(
     name: input.name ?? null,
     score: input.score,
     text,
+    retrievalSources: "retrieval_sources" in input ? input.retrieval_sources : undefined,
   };
 }
 
