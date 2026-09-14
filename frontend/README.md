@@ -31,6 +31,15 @@ npm run dev
 The backend must be running (default `http://localhost:8000`) for anything
 past the landing page to work.
 
+### Running in Docker
+
+`Dockerfile` builds a production-shaped image (multi-stage, `output:
+"standalone"`, non-root, no dev dependencies in the runtime image) -- see the
+root [README.md](../README.md) for the full containerized stack (this
+service + FastAPI + Postgres/pgvector) via `docker compose up`. In that
+stack `BACKEND_URL` points at the `backend` service by its container
+hostname, not `localhost`.
+
 ## Regenerating API types
 
 Frontend TypeScript types are generated from the backend's own OpenAPI

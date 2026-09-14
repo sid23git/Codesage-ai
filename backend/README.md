@@ -35,7 +35,16 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The API will be available at <http://localhost:8000>.
-Interactive OpenAPI docs: <http://localhost:8000/docs>
+Interactive OpenAPI docs: <http://localhost:8000/docs> (only when `DEBUG=true`).
+
+### Running in Docker
+
+`Dockerfile` builds a production-shaped image (multi-stage, non-root, 2 Uvicorn
+workers, no dev tooling) — see the root [README.md](../README.md) for the full
+containerized stack (this service + Postgres/pgvector + the frontend) via
+`docker compose up`. Migrations are never run automatically at container
+startup; apply them explicitly with `docker compose exec backend alembic
+upgrade head`.
 
 ---
 

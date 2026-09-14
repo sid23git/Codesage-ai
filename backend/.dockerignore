@@ -1,0 +1,36 @@
+# Build/dependency artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments (the image builds its own)
+.venv/
+venv/
+env/
+.env/
+
+# Test/lint/type-check caches and dev-only test suite
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+tests/
+
+# Environment files and secrets -- never baked into an image
+.env
+.env.*
+!.env.example
+
+# VCS and editor/OS noise
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

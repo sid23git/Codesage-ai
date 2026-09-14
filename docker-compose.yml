@@ -1,0 +1,119 @@
+# Local production-parity stack: db + backend + frontend, wired the same
+# way a real split deployment would be (see docs/architecture and each
+# service's Dockerfile). This is NOT a deployment manifest -- there is no
+# CI/CD, no managed database, and no orchestration here (that's M8 Phase 2+).
+# It exists so "does this actually work the way production will" can be
+# answered locally, with mock LLM/embedding providers so no paid API keys
+# are required.
+#
+# Usage:
+#   cp .env.example .env      # fill in SECRET_KEY / POSTGRES_PASSWORD
+#   docker compose up --build
+#   docker compose exec backend alembic upgrade head   # migrations are
+#                                                       # never run automatically
+#
+# See README.md for the full walkthrough.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-codesage}
+      POSTGRES_USER: ${POSTGRES_USER:-codesage}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - codesage-net
+    ports:
+      # Bound to 127.0.0.1 only -- a convenience for connecting a local
+      # psql/GUI client while developing, never a publicly-reachable port.
+      # Omit this entirely for anything beyond local development.
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-codesage} -d ${POSTGRES_DB:-codesage}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_NAME: codesage-api
+      # Deliberately production-shaped (not "development") so this stack
+      # actually exercises the same code paths a real deployment would --
+      # no /docs, JSON logs, CORS closed, DEBUG=true rejected outright by
+      # Phase 0's startup validator if ever set true alongside this.
+      APP_ENV: production
+      DEBUG: "false"
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env (see .env.example)}
+      REGISTRATION_ENABLED: "true"
+      RATE_LIMIT_ENABLED: "true"
+      # Component DSN, not a full DATABASE_URL -- `db` is this compose
+      # network's service hostname, never `localhost` (that would resolve
+      # to the backend container itself, not the database container).
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-codesage}
+      DB_USER: ${POSTGRES_USER:-codesage}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      # Mock providers by default -- the full stack runs and is fully
+      # testable with zero paid API keys. Override in .env to exercise a
+      # real provider locally.
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-mock}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - codesage-net
+    ports:
+      # Bound to 127.0.0.1 only -- for curling /health, running `alembic`,
+      # and local verification directly against the API. The browser is
+      # never meant to call this; only the frontend's BFF does (over the
+      # private codesage-net network, by service name).
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # `backend`, not `localhost` -- the frontend's BFF Route Handlers
+      # call this server-to-server, over codesage-net, by service name.
+      BACKEND_URL: http://backend:8000
+      SESSION_COOKIE_NAME: cs_session
+      SESSION_COOKIE_MAX_AGE_SECONDS: "86400"
+      NODE_ENV: production
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - codesage-net
+    ports:
+      # The only port a real browser is meant to reach.
+      - "3000:3000"
+
+networks:
+  codesage-net:
+    driver: bridge
+
+volumes:
+  db_data:
