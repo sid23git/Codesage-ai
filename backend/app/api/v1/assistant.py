@@ -11,11 +11,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_embedding_provider, get_llm_provider
 from app.core.config import get_settings
+from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.llm.exceptions import (
     LLMConfigurationError,
@@ -137,7 +138,9 @@ def _raise_for_llm_error(exc: Exception) -> None:
         "sufficiently relevant indexed code for the question."
     ),
 )
+@limiter.limit(lambda: get_settings().RATE_LIMIT_ASSISTANT)
 async def ask_assistant(
+    request: Request,  # required by slowapi's @limiter.limit (read via introspection)
     repository_id: int,
     ask_request: AskRequest,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -310,7 +313,9 @@ async def get_conversation(
         "relevant indexed code is found for the target."
     ),
 )
+@limiter.limit(lambda: get_settings().RATE_LIMIT_ASSISTANT)
 async def explain_code(
+    request: Request,  # required by slowapi's @limiter.limit (read via introspection)
     repository_id: int,
     explain_request: ExplainRequest,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -416,7 +421,9 @@ async def explain_code(
         "result rather than a fabricated review."
     ),
 )
+@limiter.limit(lambda: get_settings().RATE_LIMIT_ASSISTANT)
 async def review_code(
+    request: Request,  # required by slowapi's @limiter.limit (read via introspection)
     repository_id: int,
     review_request: ReviewRequest,
     current_user: Annotated[User, Depends(get_current_user)],

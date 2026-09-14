@@ -32,6 +32,11 @@ os.environ.setdefault(
 )
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
+# Rate limiting is off by default across the suite: hundreds of tests share
+# one TestClient host, and slowapi's per-IP counters would otherwise start
+# rejecting requests partway through a single test file. It has its own
+# dedicated coverage (test_rate_limiting.py), which flips it on explicitly.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 from app.core.security import create_access_token
 from app.db.base import Base

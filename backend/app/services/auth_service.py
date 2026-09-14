@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+import anyio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -91,7 +92,12 @@ class AuthService:
                 f"User with email '{normalized_email}' already exists."
             )
 
-        hashed_pw = hash_password(user_in.password)
+        # bcrypt's hashing work is synchronous CPU work (~100-300ms at the
+        # default cost factor) -- running it inline would block this
+        # process's entire event loop for that whole duration, stalling
+        # every other in-flight request. Offload it to a worker thread so
+        # the loop stays free.
+        hashed_pw = await anyio.to_thread.run_sync(hash_password, user_in.password)
         new_user = User(
             email=normalized_email,
             password_hash=hashed_pw,
@@ -135,7 +141,10 @@ class AuthService:
             logger.warning("Authentication failed: user id=%s is inactive", user.id)
             return None
 
-        if not verify_password(password, user.password_hash):
+        password_ok = await anyio.to_thread.run_sync(
+            verify_password, password, user.password_hash
+        )
+        if not password_ok:
             logger.warning(
                 "Authentication failed: invalid password for user id=%s", user.id
             )

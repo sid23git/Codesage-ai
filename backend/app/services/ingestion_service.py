@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
@@ -10,7 +11,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -40,6 +41,41 @@ def _force_remove_readonly(func: object, path: str, excinfo: object) -> None:
         os.unlink(path)
     except OSError:
         pass
+
+
+# Module-level singleton, created lazily (mirrors app/db/session.py's
+# lazy-engine pattern) and re-created whenever the running event loop
+# changes -- an asyncio.Semaphore binds to whichever loop is running the
+# first time it's acquired/released, and reusing one across a *different*
+# loop raises RuntimeError. In the real app there's exactly one long-lived
+# loop, so this never recreates after the first call; under pytest-asyncio
+# (a fresh event loop per test function), it transparently recreates once
+# per test instead of crashing on the second test that exercises ingestion.
+_ingestion_semaphore: asyncio.Semaphore | None = None
+_ingestion_semaphore_size: int | None = None
+_ingestion_semaphore_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_ingestion_semaphore(max_concurrent: int) -> asyncio.Semaphore:
+    """Return the process-wide ingestion concurrency semaphore.
+
+    Caps how many ingestion pipelines (each holding a full downloaded
+    archive in memory) run at once, so a burst of simultaneous "start
+    ingestion" clicks queues behind this limit instead of risking an
+    out-of-memory failure. Requests beyond the limit simply wait longer
+    for their turn -- see INGESTION_MAX_CONCURRENT's docstring.
+    """
+    global _ingestion_semaphore, _ingestion_semaphore_size, _ingestion_semaphore_loop
+    current_loop = asyncio.get_running_loop()
+    if (
+        _ingestion_semaphore is None
+        or _ingestion_semaphore_size != max_concurrent
+        or _ingestion_semaphore_loop is not current_loop
+    ):
+        _ingestion_semaphore = asyncio.Semaphore(max_concurrent)
+        _ingestion_semaphore_size = max_concurrent
+        _ingestion_semaphore_loop = current_loop
+    return _ingestion_semaphore
 
 
 def _cleanup_dir(dir_path: str | Path | None) -> None:
@@ -157,6 +193,14 @@ class IngestionService:
         # embedding-API calls that follow — all of which can take a long
         # time and must not happen with a live DB transaction in progress.
         await db.commit()
+
+        # Bound how many ingestion pipelines (each holding a full archive
+        # in memory) run at once, process-wide -- a burst of simultaneous
+        # "start ingestion" clicks queues here rather than risking an
+        # out-of-memory failure. This request's connection simply stays
+        # open a little longer; nothing is rejected.
+        semaphore = _get_ingestion_semaphore(app_settings.INGESTION_MAX_CONCURRENT)
+        await semaphore.acquire()
 
         temp_dir: str | None = None
         try:
@@ -281,6 +325,74 @@ class IngestionService:
 
         finally:
             _cleanup_dir(temp_dir)
+            semaphore.release()
+
+    @classmethod
+    async def sweep_stale_ingestions(cls, db: AsyncSession) -> int:
+        """Mark any ``ingesting``-status rows as failed, on startup.
+
+        Ingestion runs synchronously inside its request handler with no
+        persistence checkpoint between "started" and "finished" -- if the
+        process is killed mid-run (a deploy, an OOM, a platform reschedule),
+        the row is left at ``status="ingesting"`` forever, and the owning
+        repository stuck at ``status="analyzing"`` forever, with no code
+        path that would ever change either again. Call this once at
+        application startup (see ``app.main``'s lifespan) so a restart
+        recovers cleanly into a normal, retryable ``failed`` state instead
+        of a silent dead end the user has no way back from.
+
+        Returns
+        -------
+        int
+            Number of ingestion rows swept.
+        """
+        result = await db.execute(
+            update(RepositoryIngestion)
+            .where(RepositoryIngestion.status == IngestionStatus.INGESTING.value)
+            .values(
+                status=IngestionStatus.FAILED.value,
+                error_message=(
+                    "Ingestion was interrupted by a service restart. Please retry."
+                ),
+                completed_at=datetime.now(UTC),
+            )
+        )
+        swept_count = result.rowcount or 0
+
+        if swept_count:
+            # The repository's own status mirrors its *latest* ingestion --
+            # only repositories still "analyzing" have anything to fix up,
+            # and only when their most recent ingestion was one of the rows
+            # just swept (an older, already-terminal ingestion for the same
+            # repository must never overwrite a status a newer run already
+            # set correctly).
+            from app.models.repository import Repository
+
+            stale_repo_ids = (
+                select(RepositoryIngestion.repository_id)
+                .where(
+                    RepositoryIngestion.status == IngestionStatus.FAILED.value,
+                    RepositoryIngestion.error_message
+                    == "Ingestion was interrupted by a service restart. Please retry.",
+                )
+                .scalar_subquery()
+            )
+            await db.execute(
+                update(Repository)
+                .where(
+                    Repository.status == RepositoryStatus.ANALYZING.value,
+                    Repository.id.in_(stale_repo_ids),
+                )
+                .values(status=RepositoryStatus.FAILED.value)
+            )
+            logger.warning(
+                "Swept %d stale ingestion(s) left in 'ingesting' state by a "
+                "prior process restart.",
+                swept_count,
+            )
+
+        await db.commit()
+        return swept_count
 
     @classmethod
     async def get_latest_ingestion(

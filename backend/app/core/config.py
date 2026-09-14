@@ -68,6 +68,55 @@ class Settings(BaseSettings):
         description="Enable debug mode (never True in production).",
     )
     LOG_LEVEL: LogLevel = Field(default=LogLevel.INFO, description="Root log level.")
+    LOG_FORMAT: str = Field(
+        default="text",
+        description=(
+            "Log output format: 'text' (human-readable) or 'json' (structured)."
+        ),
+    )
+    REGISTRATION_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "Whether POST /auth/register accepts new accounts. Set to false to "
+            "close public registration on a deployed instance after creating "
+            "your own account, without removing the endpoint's code."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Rate limiting
+    # ------------------------------------------------------------------
+    RATE_LIMIT_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "Enable per-IP request rate limiting on auth and AI/ingestion "
+            "endpoints. Limits are enforced in-process (no Redis) using each "
+            "worker's own in-memory counters — with N worker processes, the "
+            "effective ceiling is roughly N times the configured value, not "
+            "a single global limit. That is an accepted trade-off for a "
+            "small deployment: it still stops a single client from hammering "
+            "one worker, which is the actual risk being guarded against."
+        ),
+    )
+    RATE_LIMIT_AUTH: str = Field(
+        default="10/minute",
+        description="Limit for POST /auth/login and /auth/register, per client IP.",
+    )
+    RATE_LIMIT_ASSISTANT: str = Field(
+        default="20/minute",
+        description=(
+            "Limit for /ask, /explain, /review (paid LLM/embedding calls), "
+            "per client IP."
+        ),
+    )
+    RATE_LIMIT_INGEST: str = Field(
+        default="5/minute",
+        description=(
+            "Limit for POST /repositories/{id}/ingest (the most expensive "
+            "single operation in the app — a GitHub download plus a full "
+            "embedding pass), per client IP."
+        ),
+    )
     SECRET_KEY: str = Field(
         ...,
         min_length=32,
@@ -129,6 +178,20 @@ class Settings(BaseSettings):
         default=60.0,
         gt=0,
         description="Timeout in seconds for repository download and extraction.",
+    )
+    INGESTION_MAX_CONCURRENT: int = Field(
+        default=2,
+        gt=0,
+        description=(
+            "Maximum number of ingestion pipelines (download + extract + "
+            "scan + embed) allowed to run at once, process-wide. Each one "
+            "holds a full archive (up to INGESTION_MAX_ARCHIVE_SIZE_BYTES) "
+            "in memory at once; this caps worst-case concurrent memory use "
+            "rather than letting an unbounded number of simultaneous "
+            "ingestions run and risk exhausting the instance's memory. "
+            "Callers beyond this limit simply wait their turn -- the "
+            "request stays open longer, nothing is rejected or lost."
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -221,6 +284,36 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = Field(default="")
 
     # ------------------------------------------------------------------
+    # Database — connection pool
+    # ------------------------------------------------------------------
+    DB_POOL_SIZE: int = Field(
+        default=5,
+        gt=0,
+        description=(
+            "Persistent connections per engine (per worker process). Keep this "
+            "low when pointed at a managed Postgres provider's pooled endpoint "
+            "(e.g. Neon/Supabase PgBouncer) — those enforce their own low "
+            "connection ceilings independent of this setting."
+        ),
+    )
+    DB_MAX_OVERFLOW: int = Field(
+        default=5,
+        ge=0,
+        description="Additional connections allowed beyond DB_POOL_SIZE under load.",
+    )
+    DB_STATEMENT_CACHE_SIZE: int = Field(
+        default=100,
+        ge=0,
+        description=(
+            "asyncpg prepared-statement cache size. Set to 0 when DATABASE_URL "
+            "points at a transaction-mode connection pooler (PgBouncer and "
+            "similar) — those do not support server-side prepared statements "
+            "persisting across pooled connections, and asyncpg will otherwise "
+            "fail with 'prepared statement already exists'-style errors."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Resolved DSN (populated by the model validator below)
     # ------------------------------------------------------------------
     _resolved_database_url: str = ""
@@ -236,6 +329,26 @@ class Settings(BaseSettings):
                 'python -c "import secrets; print(secrets.token_hex(32))"'
             )
         return v
+
+    @model_validator(mode="after")
+    def debug_must_be_off_in_production(self) -> Settings:
+        """Refuse to start with DEBUG=true and APP_ENV=production together.
+
+        DEBUG=true exposes /docs and /redoc, echoes SQL to logs, and (via
+        create_app()'s CORS wiring) opens CORS to allow_origins=["*"] with
+        credentials enabled. Any one of those is a real production hole; the
+        combination is a single copy-pasted .env.example away from shipping
+        with all three at once, so this is enforced at startup rather than
+        left as a deploy-checklist item.
+        """
+        if self.DEBUG and self.APP_ENV is AppEnvironment.PRODUCTION:
+            raise ValueError(
+                "DEBUG=true is not allowed when APP_ENV=production. "
+                "Set DEBUG=false (or APP_ENV=development/staging) before "
+                "deploying — DEBUG mode exposes /docs, logs raw SQL, and "
+                "opens CORS to all origins with credentials."
+            )
+        return self
 
     @model_validator(mode="after")
     def resolve_database_url(self) -> Settings:

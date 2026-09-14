@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
@@ -65,10 +66,22 @@ def _get_engine() -> AsyncEngine:
             db_url,
             echo=settings.DEBUG,  # log SQL in debug mode only
             pool_pre_ping=True,  # verify connections before use
-            pool_size=10,
-            max_overflow=20,
+            pool_size=settings.DB_POOL_SIZE,
+            max_overflow=settings.DB_MAX_OVERFLOW,
+            # statement_cache_size=0 is required when DATABASE_URL points at a
+            # transaction-mode pooler (PgBouncer and similar, as used by most
+            # managed Postgres providers' pooled endpoints) — those don't
+            # support asyncpg's server-side prepared statements persisting
+            # across pooled connections. Non-zero is fine (and faster) for a
+            # direct, unpooled connection.
+            connect_args={"statement_cache_size": settings.DB_STATEMENT_CACHE_SIZE},
         )
-        logger.info("Async database engine created (host=%s)", settings.DB_HOST)
+        logger.info(
+            "Async database engine created (host=%s, pool_size=%d, max_overflow=%d)",
+            settings.DB_HOST,
+            settings.DB_POOL_SIZE,
+            settings.DB_MAX_OVERFLOW,
+        )
         return _engine
     except Exception as exc:
         raise RuntimeError(f"Failed to create database engine: {exc}") from exc
@@ -109,6 +122,24 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     ------
     SQLAlchemyError
         Re-raised after rollback so FastAPI's exception handlers can act.
+    """
+    async with _get_session_factory()() as session:
+        try:
+            yield session
+            await session.commit()
+        except SQLAlchemyError:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def session_scope() -> AsyncGenerator[AsyncSession, None]:
+    """Yield a session for non-request contexts (startup tasks, scripts).
+
+    ``get_db()`` is shaped as a FastAPI dependency (an async generator);
+    this is the equivalent for code that isn't handling a request -- e.g.
+    the startup stale-ingestion sweep in ``app.main``'s lifespan. Same
+    commit-on-success/rollback-on-error behavior as ``get_db()``.
     """
     async with _get_session_factory()() as session:
         try:

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_embedding_provider, get_github_client
+from app.core.config import get_settings
+from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.github.client import GitHubClient
 from app.github.exceptions import (
@@ -233,7 +235,9 @@ async def sync_repository(
         "ingestion result. Caller must be the repository owner."
     ),
 )
+@limiter.limit(lambda: get_settings().RATE_LIMIT_INGEST)
 async def ingest_repository(
+    request: Request,  # required by slowapi's @limiter.limit (read via introspection)
     repository_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],

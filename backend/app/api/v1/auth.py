@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.config import get_settings
+from app.core.rate_limit import limiter
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.models.user import User
@@ -25,11 +27,19 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     summary="Register a new user account",
     description="Create a new user with a unique email and secure password.",
 )
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH)
 async def register(
+    request: Request,  # required by slowapi's @limiter.limit (read via introspection)
     user_in: UserCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Register a new user account."""
+    if not get_settings().REGISTRATION_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is currently closed on this instance.",
+        )
+
     try:
         user = await AuthService.register_user(db, user_in)
     except UserAlreadyExistsError as exc:
@@ -48,7 +58,9 @@ async def register(
     summary="User login",
     description="Authenticate with email and password to receive a JWT access token.",
 )
+@limiter.limit(lambda: get_settings().RATE_LIMIT_AUTH)
 async def login(
+    request: Request,  # required by slowapi's @limiter.limit (read via introspection)
     credentials: UserLogin,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TokenResponse:

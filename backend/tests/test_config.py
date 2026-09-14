@@ -84,3 +84,51 @@ class TestSettings:
                 SECRET_KEY="too-short",
                 DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
             )
+
+    def test_settings_rejects_debug_true_in_production(self) -> None:
+        """DEBUG=true must never be combined with APP_ENV=production."""
+        with pytest.raises(ValidationError, match="DEBUG=true is not allowed"):
+            Settings(
+                SECRET_KEY="a" * 32,
+                DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+                APP_ENV=AppEnvironment.PRODUCTION,
+                DEBUG=True,
+            )
+
+    def test_settings_allows_debug_true_outside_production(self) -> None:
+        """DEBUG=true stays allowed for development/staging."""
+        settings = Settings(
+            SECRET_KEY="a" * 32,
+            DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+            APP_ENV=AppEnvironment.STAGING,
+            DEBUG=True,
+        )
+        assert settings.DEBUG is True
+
+    def test_settings_allows_debug_false_in_production(self) -> None:
+        """DEBUG=false is the only allowed pairing with APP_ENV=production."""
+        settings = Settings(
+            SECRET_KEY="a" * 32,
+            DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+            APP_ENV=AppEnvironment.PRODUCTION,
+            DEBUG=False,
+        )
+        assert settings.APP_ENV == AppEnvironment.PRODUCTION
+
+    def test_settings_registration_enabled_defaults_true(self) -> None:
+        """Registration stays open by default -- an operator opts out, not in."""
+        settings = Settings(
+            SECRET_KEY="a" * 32,
+            DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+        )
+        assert settings.REGISTRATION_ENABLED is True
+
+    def test_settings_db_pool_defaults(self) -> None:
+        """Pool settings default to conservative values safe for pooled DSNs."""
+        settings = Settings(
+            SECRET_KEY="a" * 32,
+            DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+        )
+        assert settings.DB_POOL_SIZE == 5
+        assert settings.DB_MAX_OVERFLOW == 5
+        assert settings.DB_STATEMENT_CACHE_SIZE == 100

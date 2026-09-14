@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import tarfile
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.github.client import GitHubClient
 from app.github.exceptions import (
     GitHubRateLimitError,
     GitHubRepositoryNotFoundError,
 )
+from app.models.ingestion import RepositoryIngestion
+from app.models.repository import Repository
 from app.models.user import User
 from app.schemas.ingestion import IngestionStatus
-from app.schemas.repository import RepositoryCreate
+from app.schemas.repository import RepositoryCreate, RepositoryStatus
 from app.services.ingestion_service import IngestionService
 from app.services.repository_service import RepositoryService
 
@@ -230,3 +234,184 @@ class TestIngestionQueryAndIsolation:
             db_session, other_user.id, repo.id
         )
         assert other_list is None
+
+
+class TestStaleIngestionSweep:
+    """Verify recovery of ingestions left mid-run by a process restart."""
+
+    async def test_sweeps_ingesting_row_to_failed(
+        self, db_session: AsyncSession, test_user: User
+    ) -> None:
+        repo = Repository(
+            owner_id=test_user.id,
+            name="Stuck-Repo",
+            full_name="octocat/Stuck-Repo",
+            github_url="https://github.com/octocat/Stuck-Repo",
+            status=RepositoryStatus.ANALYZING.value,
+        )
+        db_session.add(repo)
+        await db_session.commit()
+        await db_session.refresh(repo)
+
+        stuck = RepositoryIngestion(
+            repository_id=repo.id,
+            status=IngestionStatus.INGESTING.value,
+            started_at=datetime.now(UTC),
+        )
+        db_session.add(stuck)
+        await db_session.commit()
+        await db_session.refresh(stuck)
+
+        swept_count = await IngestionService.sweep_stale_ingestions(db_session)
+        assert swept_count == 1
+
+        await db_session.refresh(stuck)
+        await db_session.refresh(repo)
+        assert stuck.status == IngestionStatus.FAILED.value
+        assert stuck.error_message is not None
+        assert "restart" in stuck.error_message.lower()
+        assert stuck.completed_at is not None
+        assert repo.status == RepositoryStatus.FAILED.value
+
+    async def test_leaves_completed_and_failed_ingestions_untouched(
+        self, db_session: AsyncSession, test_user: User
+    ) -> None:
+        repo = Repository(
+            owner_id=test_user.id,
+            name="Fine-Repo",
+            full_name="octocat/Fine-Repo",
+            github_url="https://github.com/octocat/Fine-Repo",
+            status=RepositoryStatus.READY.value,
+        )
+        db_session.add(repo)
+        await db_session.commit()
+        await db_session.refresh(repo)
+
+        completed = RepositoryIngestion(
+            repository_id=repo.id,
+            status=IngestionStatus.COMPLETED.value,
+            completed_at=datetime.now(UTC),
+        )
+        already_failed = RepositoryIngestion(
+            repository_id=repo.id,
+            status=IngestionStatus.FAILED.value,
+            error_message="a real, unrelated failure",
+            completed_at=datetime.now(UTC),
+        )
+        db_session.add_all([completed, already_failed])
+        await db_session.commit()
+
+        swept_count = await IngestionService.sweep_stale_ingestions(db_session)
+        assert swept_count == 0
+
+        await db_session.refresh(completed)
+        await db_session.refresh(already_failed)
+        assert completed.status == IngestionStatus.COMPLETED.value
+        assert already_failed.error_message == "a real, unrelated failure"
+
+    async def test_does_not_touch_repository_not_in_analyzing_status(
+        self, db_session: AsyncSession, test_user: User
+    ) -> None:
+        """A repo could be `ready`/`failed` already if a *later* ingestion
+        (after the stuck one) completed -- the sweep must never regress it."""
+        repo = Repository(
+            owner_id=test_user.id,
+            name="Already-Ready-Repo",
+            full_name="octocat/Already-Ready-Repo",
+            github_url="https://github.com/octocat/Already-Ready-Repo",
+            status=RepositoryStatus.READY.value,
+        )
+        db_session.add(repo)
+        await db_session.commit()
+        await db_session.refresh(repo)
+
+        stuck = RepositoryIngestion(
+            repository_id=repo.id,
+            status=IngestionStatus.INGESTING.value,
+        )
+        db_session.add(stuck)
+        await db_session.commit()
+
+        await IngestionService.sweep_stale_ingestions(db_session)
+
+        await db_session.refresh(repo)
+        assert repo.status == RepositoryStatus.READY.value
+
+    async def test_returns_zero_when_nothing_to_sweep(
+        self, db_session: AsyncSession
+    ) -> None:
+        assert await IngestionService.sweep_stale_ingestions(db_session) == 0
+
+
+class TestIngestionConcurrencyLimit:
+    """Verify the process-wide ingestion concurrency cap."""
+
+    async def test_semaphore_caps_concurrent_ingestions(
+        self,
+        test_engine: AsyncEngine,
+        db_session: AsyncSession,
+        test_user: User,
+        mock_tarball_bytes: bytes,
+    ) -> None:
+        """With INGESTION_MAX_CONCURRENT=1, a second concurrent ingestion
+        must wait for the first to finish rather than running alongside it.
+
+        Each concurrent call gets its own session (bound to the same
+        underlying test_engine) -- a single AsyncSession does not support
+        genuinely concurrent operations from two coroutines at once, which
+        would otherwise fail for reasons unrelated to the thing under test.
+        """
+        from app.core.config import Settings
+
+        limited_settings = Settings(
+            SECRET_KEY="a" * 32,
+            DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+            INGESTION_MAX_CONCURRENT=1,
+        )
+
+        repo_in = RepositoryCreate(
+            name="Concurrency-Repo",
+            github_url="https://github.com/octocat/Concurrency-Repo",
+        )
+        repo = await RepositoryService.create_repository(
+            db_session, test_user.id, repo_in
+        )
+        await db_session.commit()
+
+        in_flight = 0
+        max_observed_in_flight = 0
+
+        async def slow_download(*args: object, **kwargs: object) -> bytes:
+            nonlocal in_flight, max_observed_in_flight
+            in_flight += 1
+            max_observed_in_flight = max(max_observed_in_flight, in_flight)
+            await asyncio.sleep(0.05)
+            in_flight -= 1
+            return mock_tarball_bytes
+
+        mock_github = AsyncMock(spec=GitHubClient)
+        mock_github.download_tarball.side_effect = slow_download
+
+        session_factory = async_sessionmaker(
+            bind=test_engine, class_=AsyncSession, expire_on_commit=False
+        )
+
+        async def run_ingestion() -> None:
+            async with session_factory() as session:
+                await IngestionService.trigger_ingestion(
+                    session,
+                    test_user.id,
+                    repo.id,
+                    mock_github,
+                    settings=limited_settings,
+                )
+
+        await asyncio.gather(run_ingestion(), run_ingestion())
+
+        assert max_observed_in_flight == 1
+
+        ingestions = await IngestionService.list_ingestions(
+            db_session, test_user.id, repo.id
+        )
+        assert ingestions is not None
+        assert len(ingestions) == 2

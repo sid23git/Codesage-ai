@@ -61,6 +61,25 @@ class TestRegistration:
         response = client.post("/auth/register", json={})
         assert response.status_code == 422
 
+    def test_register_rejected_when_registration_disabled(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """POST /auth/register returns 403 when REGISTRATION_ENABLED is false."""
+        from app.core.config import Settings
+
+        disabled_settings = Settings(
+            SECRET_KEY="a" * 32,
+            DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/testdb",
+            REGISTRATION_ENABLED=False,
+        )
+        monkeypatch.setattr("app.api.v1.auth.get_settings", lambda: disabled_settings)
+
+        response = client.post(
+            "/auth/register",
+            json={"email": "blocked@example.com", "password": "securepassword123"},
+        )
+        assert response.status_code == 403
+
 
 class TestLogin:
     """Test suite for POST /auth/login."""

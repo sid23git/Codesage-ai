@@ -49,12 +49,29 @@ async function handle(
     }
   }
 
-  const result = await callBackend(path.join("/"), {
-    method: request.method,
-    token,
-    body,
-    searchParams: request.nextUrl.searchParams,
-  });
+  let result: Awaited<ReturnType<typeof callBackend>>;
+  try {
+    result = await callBackend(path.join("/"), {
+      method: request.method,
+      token,
+      body,
+      searchParams: request.nextUrl.searchParams,
+    });
+  } catch (error) {
+    // The backend being unreachable (down, restarting, DNS/network
+    // failure) is the single most common real-world failure mode of a
+    // split frontend/backend deployment -- without this boundary, that
+    // `fetch` rejection propagates as an unhandled exception, and Next.js
+    // returns a bare, non-JSON 500 that the client's typed error handling
+    // (which expects a JSON `{ "detail": ... }` body) can't parse. A 502
+    // here is both accurate (the backend, not this proxy, is at fault)
+    // and lets the existing retry-eligible ErrorState UI engage.
+    console.error("BFF proxy: backend request failed", error);
+    return NextResponse.json(
+      { detail: "The server is temporarily unavailable. Please try again." },
+      { status: 502 },
+    );
+  }
 
   if (result.status === 401 && token) {
     // The token FastAPI holds is invalid/expired -- clear it so the client
