@@ -53,10 +53,21 @@ ENV PATH="/opt/venv/bin:${PATH}" \
 
 USER app
 
+# 8000 is only the *default* -- see CMD below. Render (and most PaaS
+# platforms) assign their own port at runtime via the PORT env var and
+# route health checks and all traffic to it; EXPOSE is purely metadata
+# for humans/tooling (e.g. `docker run -P`) and has no effect on which
+# port the process actually binds to.
 EXPOSE 8000
 
+# Shell form (not exec-form JSON) so $PORT is expanded by the shell at
+# container start, not baked in at build time -- `${PORT:-8000}` falls
+# back to 8000 when PORT is unset (docker-compose.yml, local `docker run`),
+# and honours whatever port Render (or any other platform) actually
+# assigns. `exec` replaces the shell with python itself so this stays a
+# faithful proxy for what the app will actually be doing.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=5 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+    CMD exec python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-8000}/health', timeout=3)"
 
 # 1 Uvicorn worker process. Phase 0's original production default was 2
 # (see backend/.env.example / app/db/session.py's DB_POOL_SIZE comment),
@@ -71,4 +82,15 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=5 \
 # are never run here -- see app/main.py's lifespan and the deployment
 # docs; apply them explicitly with `alembic upgrade head` as a release
 # step.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+#
+# Shell form (see HEALTHCHECK above for why): Render injects its own
+# PORT env var and routes health checks/traffic to it -- a hardcoded
+# `--port 8000` here means uvicorn never listens where Render is
+# actually checking, which is the exact cause of a deploy that builds
+# fine but then times out waiting for a health check that can never
+# succeed (reproduced locally: with PORT=10000 injected, the container
+# only ever answers on 8000). `exec` makes uvicorn PID 1's replacement
+# so SIGTERM (deploy/restart/shutdown) reaches it directly instead of
+# being swallowed by an un-exec'd shell -- important for in-flight
+# requests and background ingestion tasks to shut down cleanly.
+CMD exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
