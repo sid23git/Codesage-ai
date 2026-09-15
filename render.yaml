@@ -1,0 +1,95 @@
+# Render Blueprint — provisions both application services from the M8
+# Phase 1 Dockerfiles. The database is NOT provisioned here: it's a
+# managed Neon Postgres instance (pgvector), created separately and
+# wired in as a secret env var — see docs/deployment/README.md for the
+# full, step-by-step procedure this blueprint is one part of.
+#
+# Every `sync: false` env var below is a secret: Render prompts for it
+# once, during Blueprint creation, and stores it outside this file —
+# nothing sensitive is ever written into this repo.
+#
+# Usage: Render dashboard → New → Blueprint → point at this repo. If a
+# future Render schema change makes the Blueprint path fail, both
+# services can be created by hand instead (Dockerfile runtime, same
+# dockerfilePath/dockerContext/env vars below) — see the doc above for
+# that fallback path in full.
+
+services:
+  - type: web
+    name: codesage-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      # ---- non-secret, production-shaped configuration ----
+      - key: APP_NAME
+        value: codesage-api
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: REGISTRATION_ENABLED
+        value: "true" # flip to "false" in the dashboard after creating your own account
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: RATE_LIMIT_AUTH
+        value: 10/minute
+      - key: RATE_LIMIT_ASSISTANT
+        value: 20/minute
+      - key: RATE_LIMIT_INGEST
+        value: 5/minute
+      # 0 is required if DATABASE_URL points at Neon's *pooled* endpoint
+      # (PgBouncer, transaction mode -- recommended, see the deployment
+      # doc) since that pooler doesn't support asyncpg's server-side
+      # prepared-statement cache. Safe either way: 0 also works fine
+      # (just marginally less optimal) against a direct connection.
+      - key: DB_STATEMENT_CACHE_SIZE
+        value: "0"
+      # Mock by default -- the app is fully functional with zero paid
+      # keys. Flip both PROVIDER values (and supply the matching key
+      # below) only once real credentials are available.
+      - key: EMBEDDING_PROVIDER
+        value: mock
+      - key: LLM_PROVIDER
+        value: mock
+      - key: LLM_MODEL
+        value: claude-sonnet-5
+      # ---- secrets: prompted for once at Blueprint creation, stored
+      #      by Render, never written to this file ----
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  - type: web
+    name: codesage-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: free
+    region: oregon
+    envVars:
+      # Render assigns a predictable https://<name>.onrender.com URL to
+      # the backend service above -- verify it matches in the dashboard
+      # once the backend service exists, and correct this value if not.
+      - key: BACKEND_URL
+        value: https://codesage-backend.onrender.com
+      - key: SESSION_COOKIE_NAME
+        value: cs_session
+      - key: SESSION_COOKIE_MAX_AGE_SECONDS
+        value: "86400"
+      - key: NODE_ENV
+        value: production

@@ -58,10 +58,17 @@ EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=5 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
 
-# 2 Uvicorn worker processes, matching the M8 Phase 0 production decision
-# (see backend/.env.example / app/db/session.py's DB_POOL_SIZE comment --
-# per-worker resources like the DB pool and the in-memory rate limiter are
-# sized with exactly this worker count in mind). Migrations are never run
-# here -- see app/main.py's lifespan and the deployment docs; apply them
-# explicitly with `alembic upgrade head` as a release step.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# 1 Uvicorn worker process. Phase 0's original production default was 2
+# (see backend/.env.example / app/db/session.py's DB_POOL_SIZE comment),
+# but the M8 Phase 3 Render deployment runs on a 512 MB free-tier
+# instance: 2 worker *processes* each carry a full separate Python heap
+# (FastAPI/SQLAlchemy/anthropic/openai/tiktoken, ~100-180MB idle apiece),
+# and INGESTION_MAX_CONCURRENT's semaphore is a per-process singleton, so
+# 2 workers meant a worst case of 4 simultaneous in-memory ingestions --
+# real OOM-kill risk on that instance size. 1 worker keeps this
+# comfortably within budget; revisit alongside a larger instance if
+# throughput ever actually requires more than one process. Migrations
+# are never run here -- see app/main.py's lifespan and the deployment
+# docs; apply them explicitly with `alembic upgrade head` as a release
+# step.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

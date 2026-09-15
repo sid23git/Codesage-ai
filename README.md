@@ -4,6 +4,10 @@ An AI-powered software engineering assistant that understands, documents, review
 
 🚧 Currently under active development.
 
+## Production deployment
+
+Render (backend + frontend, from the M8 Phase 1 Dockerfiles) + Neon (managed PostgreSQL + pgvector). Full runbook — account setup, every environment variable, the migration/rollback procedure, and the live smoke-test checklist — lives in **[docs/deployment/README.md](docs/deployment/README.md)**; the Render Blueprint itself is [`render.yaml`](render.yaml) at the repo root.
+
 ## Running locally
 
 There are two ways to run the stack, for two different purposes:
