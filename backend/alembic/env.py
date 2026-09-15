@@ -15,11 +15,24 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-# Import Base so Alembic's autogenerate can discover all mapped tables.
-# Import all model modules here as they are added, e.g.:
-#   from app.models import user  # noqa: F401
-from app.db.base import Base
+# Import Base so Alembic's autogenerate can discover all mapped tables --
+# and, critically, actually import the model modules too (via
+# `app.models`, whose own __init__ already imports and re-exports every
+# one, for exactly this purpose -- see that file's docstring). Importing
+# Base alone does NOT populate Base.metadata; each model class's own
+# import is what registers its table as a side effect of class
+# definition.
+#
+# `alembic upgrade`/`downgrade` never consult target_metadata (they just
+# replay each migration's own hardcoded op.* calls), so this omission was
+# invisible for every command actually run against this project until
+# `alembic check`/`--autogenerate` were first run standalone (not via
+# pytest, which happens to import the models transitively through
+# app.main first) -- see M8 Phase 2's CI verification, which is what
+# caught it.
+import app.models  # noqa: F401
 from app.core.config import get_settings
+from app.db.base import Base
 
 # ---------------------------------------------------------------------------
 # Alembic Config & logging

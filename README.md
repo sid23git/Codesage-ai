@@ -87,3 +87,42 @@ Database files live in the named Docker volume `db_data` (declared in `docker-co
 ### Rebuilding after a code change
 
 `docker compose up --build` rebuilds any service whose Dockerfile or build context changed. During active backend/frontend development, the native (non-Docker) workflows in `backend/README.md`/`frontend/README.md` are faster (hot reload); reach for the containerized stack specifically to verify production-shaped behavior.
+
+## Continuous integration
+
+Every pull request and every push to `main` runs `.github/workflows/ci.yml` — five independent jobs, all in parallel (no job waits on another), so one slow job never blocks the rest:
+
+| Job | What it proves | Blocks merge? |
+|---|---|---|
+| **frontend** | `npm run typecheck` / `lint` / `test` / `build` — the same commands documented in [frontend/README.md](frontend/README.md) | Yes |
+| **backend-unit** | `ruff check` / `ruff format --check` / `mypy` / `pytest` against the fast SQLite path (~420 tests) — the same commands documented in [backend/README.md](backend/README.md) | Yes |
+| **backend-postgres** | Migrations and the RAG retrieval layer against a *real* `pgvector/pgvector:pg16` service container — see below | Yes (except the two informational `alembic check` steps — see below) |
+| **security-audit** | `npm audit --audit-level=high` (frontend) and `pip-audit` (backend) | `npm audit` yes; `pip-audit` is advisory (see below) |
+| **docker-build** | Both M8 Phase 1 Dockerfiles still build (`docker/build-push-action`, `push: false` — nothing is ever published here) | Yes |
+
+**What must pass before merging:** frontend, backend-unit, backend-postgres (its two `alembic check` steps aside), `npm audit`, and docker-build all being green. `pip-audit`'s findings and `alembic check`'s output are visible in every run but don't gate the merge — see the specific reasons below.
+
+### PostgreSQL/pgvector integration testing
+
+The `backend-postgres` job runs against a fresh `pgvector/pgvector:pg16` service container (the same image the Phase 1 `docker-compose.yml` uses) with ephemeral, CI-only credentials — never a real secret. It:
+
+1. Sets `TEST_DATABASE_URL` (and fails the job immediately, with an explicit `::error::`, if that variable is ever unset — this pipeline never silently continues without a real database).
+2. Runs `alembic upgrade head` against the empty database, `alembic current` to confirm it landed on `head`, then `alembic downgrade -1` → `alembic upgrade head` to prove the round trip is real and non-destructive.
+3. Runs `pytest tests/test_rag_retrieval.py` — the one test file that calls `VectorRetriever`/`KeywordRetriever` directly (not through the HTTP layer), genuinely exercising the real `<=>` pgvector operator and the real `tsv_content @@ plainto_tsquery(...)` full-text search, not the SQLite approximation those retrievers fall back to otherwise. Its last test asserts the session is actually bound to a `postgresql` engine — a regression that silently routed this job back onto SQLite would fail loudly here, not pass quietly.
+
+`tests/test_rag_api.py` is deliberately **not** run in this job: its `TestClient`-based tests hit a documented, pre-existing test-harness limitation against real `asyncpg` (`TestClient`'s background-thread event loop vs. `asyncpg`'s loop-affine connections — a `RuntimeError: ... attached to a different loop`, found and root-caused during M8 Phase 1, and confirmed via a live HTTP smoke test *not* to occur in the real running app, which has exactly one event loop and no thread portal). It's a test-infrastructure gap, not an application bug — fixing it properly means moving those tests to `httpx.AsyncClient`+`ASGITransport`, a good candidate for later work, not something this phase forces through.
+
+**Why `alembic check` doesn't gate the job:** it diffs the live database against what the SQLAlchemy models actually declare (`Base.metadata`), and this schema has two *permanent, deliberate* divergences from that: `code_chunks.tsv_content` and its HNSW/GIN indexes are intentionally unmapped on the `CodeChunk` model (raw-SQL-only, added directly in migration `0004` — see that model's own docstring), and several models' descriptive `comment=` kwargs were never propagated into the migrations as real `COMMENT ON COLUMN` DDL. Neither is a bug in any given PR's migration changes, and "fixing" `alembic check` would mean either remapping `tsv_content` (undoing a deliberate M5 design decision) or rewriting historical migrations purely for cosmetic DDL — exactly the kind of change-migrations-to-force-a-green-result this project avoids. The step still runs and its output stays visible on every PR, so a genuinely *new* divergence beyond this known baseline is still there for a human to notice.
+
+**Why `pip-audit` doesn't gate the job:** unlike `npm audit --audit-level=high`, `pip-audit` has no built-in severity floor as of this writing — it reports every known advisory for every installed package with no way to filter to high-severity-only. Failing the job on it would risk blocking merges on low-severity or dev-tooling-only advisories with no real bearing on this service. It still runs, and its findings are visible in the job log.
+
+### Dependency vulnerability scanning
+
+`npm audit --audit-level=high` (frontend) genuinely gates CI. `pip-audit` (backend) runs advisory-only, for the reason above. Both are dependency-vulnerability scanners specifically — they say nothing about *secrets* accidentally committed to the repo. For that, **enable GitHub's built-in secret scanning** in this repository's Settings → Code security — it's a repo-settings toggle, not something expressible in a workflow file, and this project doesn't (and shouldn't) build a custom secrets-management system in its place.
+
+### CI security posture
+
+- Zero GitHub repository secrets are referenced anywhere in `ci.yml` — every backend job's `SECRET_KEY` is a hardcoded, non-secret CI-only value, and the Postgres job's database credentials are ephemeral, generated fresh by the service container on every run.
+- Triggered via `pull_request` (never `pull_request_target`), so a fork PR's `GITHUB_TOKEN` is read-only by default and never gets write access or secret exposure just by opening a PR.
+- Top-level `permissions: contents: read` — no job needs to write to the repo, publish a package, or comment on anything.
+- No image is ever pushed anywhere by this workflow (`docker-build`'s `push: false`) — that, along with any real deployment, is a later phase.

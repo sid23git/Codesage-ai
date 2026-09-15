@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -189,3 +191,34 @@ class TestRetrievers:
         )
         assert len(lex_res) >= 1
         assert lex_res[0]["chunk"].id == c1.id
+
+    @pytest.mark.skipif(
+        not os.environ.get("TEST_DATABASE_URL"),
+        reason=(
+            "Only meaningful when TEST_DATABASE_URL selects the real "
+            "Postgres path (see conftest.py) -- a no-op under the default "
+            "SQLite fast path."
+        ),
+    )
+    @pytest.mark.asyncio
+    async def test_retrieval_suite_is_actually_running_against_postgres(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Self-check for the CI Postgres job: proves this file is
+        genuinely exercising VectorRetriever/KeywordRetriever's real
+        Postgres branches (the `<=>` operator, `tsv_content @@
+        plainto_tsquery(...)`), not silently falling back to the SQLite
+        approximation -- see app/rag/retrieval/vector.py and keyword.py's
+        own `is_postgres` branch, which this mirrors exactly. A CI
+        misconfiguration that leaves TEST_DATABASE_URL set but somehow
+        routes the engine elsewhere fails loudly here instead of the
+        surrounding tests just quietly passing against the wrong database.
+        """
+        bind = await db_session.run_sync(lambda s: s.get_bind())
+        assert bind.engine.name == "postgresql", (
+            "TEST_DATABASE_URL is set, but this session is NOT bound to a "
+            f"real postgresql engine (got {bind.engine.name!r}) -- the "
+            "Postgres CI job's retrieval tests would be silently passing "
+            "against SQLite instead of the real pgvector/tsvector code "
+            "paths they're meant to verify."
+        )
