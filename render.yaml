@@ -83,10 +83,14 @@ services:
     region: oregon
     envVars:
       # Render assigns a predictable https://<name>.onrender.com URL to
-      # the backend service above -- verify it matches in the dashboard
-      # once the backend service exists, and correct this value if not.
+      # the backend service above, but the live service was created as
+      # "codesage-ai" (not "codesage-backend" as this blueprint's `name:`
+      # says), so its actual URL carries Render's random disambiguation
+      # suffix instead: https://codesage-ai-8mie.onrender.com. Always
+      # verify this against the dashboard rather than trusting the
+      # blueprint's `name:` field.
       - key: BACKEND_URL
-        value: https://codesage-backend.onrender.com
+        value: https://codesage-ai-8mie.onrender.com
       - key: SESSION_COOKIE_NAME
         value: cs_session
       - key: SESSION_COOKIE_MAX_AGE_SECONDS
