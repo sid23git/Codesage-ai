@@ -203,6 +203,159 @@ class TestVoyageEmbeddingProviderCostGuard:
         assert mock_embed.call_count == 1  # no additional SDK call was made
 
 
+class TestVoyageTokenAwareBatchSplitting:
+    """Pure unit tests for `_split_into_batches` -- no API calls."""
+
+    def test_all_fit_in_one_batch_by_default(self) -> None:
+        provider = VoyageEmbeddingProvider(api_key="pa-test")
+        texts = [f"chunk {i}" for i in range(46)]
+        batches = provider._split_into_batches(texts)
+        assert batches == [texts]
+
+    def test_splits_when_token_budget_exceeded(self) -> None:
+        provider = VoyageEmbeddingProvider(
+            api_key="pa-test", max_tokens_per_request=10, batch_size=1000
+        )
+        # Each ~20-char text estimates to int(20/3.5)+1 = 6 tokens; two of
+        # them (12) exceed the 10-token budget, so each gets its own batch.
+        texts = ["a" * 20, "b" * 20, "c" * 20]
+        batches = provider._split_into_batches(texts)
+        assert batches == [[texts[0]], [texts[1]], [texts[2]]]
+
+    def test_respects_text_count_bound_even_under_token_budget(self) -> None:
+        provider = VoyageEmbeddingProvider(
+            api_key="pa-test", max_tokens_per_request=1_000_000, batch_size=2
+        )
+        texts = ["a", "b", "c"]
+        batches = provider._split_into_batches(texts)
+        assert batches == [["a", "b"], ["c"]]
+
+    def test_preserves_order_across_batches(self) -> None:
+        provider = VoyageEmbeddingProvider(
+            api_key="pa-test", max_tokens_per_request=10, batch_size=1000
+        )
+        texts = [f"{c}" * 20 for c in "abcdef"]
+        batches = provider._split_into_batches(texts)
+        flattened = [t for batch in batches for t in batch]
+        assert flattened == texts
+
+
+class TestVoyageMultiBatchPacing:
+    """Verifies pacing waits between multiple requests but never delays a
+    single-request batch -- `asyncio.sleep` is mocked so these run instantly
+    regardless of the configured requests-per-minute limit."""
+
+    @pytest.mark.asyncio
+    async def test_single_batch_incurs_no_pacing_delay(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider = VoyageEmbeddingProvider(api_key="pa-test")
+        mock_embed = AsyncMock(
+            side_effect=lambda **kwargs: _fake_response(1024, len(kwargs["texts"]))
+        )
+        provider._client.embed = mock_embed  # type: ignore[method-assign]
+        sleep_mock = AsyncMock()
+        monkeypatch.setattr("app.rag.embeddings.voyage.asyncio.sleep", sleep_mock)
+
+        result = await provider.embed_texts(["short chunk 1", "short chunk 2"])
+
+        assert len(result) == 2
+        assert mock_embed.call_count == 1
+        sleep_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_multi_batch_paces_between_requests(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider = VoyageEmbeddingProvider(
+            api_key="pa-test",
+            max_tokens_per_request=10,
+            batch_size=1000,
+            max_requests_per_minute=3,
+        )
+        mock_embed = AsyncMock(
+            side_effect=lambda **kwargs: _fake_response(1024, len(kwargs["texts"]))
+        )
+        provider._client.embed = mock_embed  # type: ignore[method-assign]
+        sleep_mock = AsyncMock()
+        monkeypatch.setattr("app.rag.embeddings.voyage.asyncio.sleep", sleep_mock)
+
+        # Each text alone exceeds the 10-token budget relative to the next,
+        # forcing two separate batches/requests.
+        result = await provider.embed_texts(["a" * 20, "b" * 20])
+
+        assert len(result) == 2
+        assert mock_embed.call_count == 2
+        sleep_mock.assert_awaited_once()
+        waited_seconds = sleep_mock.call_args.args[0]
+        assert waited_seconds > 0
+        # 60s / 3 requests-per-minute = 20s minimum spacing.
+        assert waited_seconds == pytest.approx(20.0, abs=1.0)
+
+    @pytest.mark.asyncio
+    async def test_higher_requests_per_minute_limit_shortens_pacing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider = VoyageEmbeddingProvider(
+            api_key="pa-test",
+            max_tokens_per_request=10,
+            batch_size=1000,
+            max_requests_per_minute=60,
+        )
+        mock_embed = AsyncMock(
+            side_effect=lambda **kwargs: _fake_response(1024, len(kwargs["texts"]))
+        )
+        provider._client.embed = mock_embed  # type: ignore[method-assign]
+        sleep_mock = AsyncMock()
+        monkeypatch.setattr("app.rag.embeddings.voyage.asyncio.sleep", sleep_mock)
+
+        await provider.embed_texts(["a" * 20, "b" * 20])
+
+        sleep_mock.assert_awaited_once()
+        waited_seconds = sleep_mock.call_args.args[0]
+        # 60s / 60 requests-per-minute = 1s minimum spacing.
+        assert waited_seconds == pytest.approx(1.0, abs=0.5)
+
+
+class TestVoyageRetryConfigurationPreserved:
+    """Requirement: preserve existing SDK-level retry/backoff for 429s --
+    the AsyncClient's own `max_retries` must still be honored/forwarded."""
+
+    def test_max_retries_and_timeout_forwarded_to_sdk_client(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeAsyncClient:
+            def __init__(self, api_key: str, max_retries: int, timeout: float) -> None:
+                captured["api_key"] = api_key
+                captured["max_retries"] = max_retries
+                captured["timeout"] = timeout
+
+        monkeypatch.setattr("app.rag.embeddings.voyage.AsyncClient", FakeAsyncClient)
+
+        VoyageEmbeddingProvider(api_key="pa-test", max_retries=7, timeout=12.0)
+
+        assert captured["max_retries"] == 7
+        assert captured["timeout"] == 12.0
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_still_raises_typed_error_after_sdk_retries_exhausted(
+        self,
+    ) -> None:
+        """The SDK itself owns the retry loop (voyageai.AsyncClient's own
+        `max_retries`); once it's exhausted and still raises
+        RateLimitError, this provider must still map that to
+        EmbeddingRateLimitError -- unchanged by the pacing/splitting work
+        above."""
+        provider = VoyageEmbeddingProvider(api_key="pa-test")
+        provider._client.embed = AsyncMock(  # type: ignore[method-assign]
+            side_effect=voyage_error.RateLimitError("rate limited after retries")
+        )
+        with pytest.raises(EmbeddingRateLimitError):
+            await provider.embed_query("q")
+
+
 class TestGetConfiguredEmbeddingProviderKeySelection:
     """Regression coverage for the fixed "always passes OPENAI_API_KEY
     regardless of EMBEDDING_PROVIDER" bug: this must be the only place

@@ -261,6 +261,30 @@ class Settings(BaseSettings):
             "deployment."
         ),
     )
+    EMBEDDING_MAX_TOKENS_PER_REQUEST: int = Field(
+        default=8_000,
+        gt=0,
+        description=(
+            "Voyage provider only. Maximum estimated tokens per individual "
+            "embedding API request -- large text batches are split across "
+            "multiple requests to stay under this. Default is conservative, "
+            "well under the ~10,000 tokens/minute ceiling observed on a "
+            "free-tier Voyage account with no payment method on file; raise "
+            "it once a payment method / higher tier is added."
+        ),
+    )
+    EMBEDDING_MAX_REQUESTS_PER_MINUTE: int = Field(
+        default=3,
+        gt=0,
+        description=(
+            "Voyage provider only. When a text batch must be split across "
+            "multiple embedding API requests, consecutive requests from one "
+            "provider instance are paced to stay at or under this many "
+            "requests per minute. A single-request batch is never delayed. "
+            "Default matches the observed free-tier requests-per-minute "
+            "ceiling; raise it once a payment method / higher tier is added."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # LLM Orchestration (Milestone 6)

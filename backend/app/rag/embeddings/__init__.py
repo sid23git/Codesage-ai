@@ -26,6 +26,8 @@ def get_provider(
     timeout: float = 60.0,
     max_retries: int = 3,
     max_tokens_per_instance: int = 2_000_000,
+    max_tokens_per_request: int = 8_000,
+    max_requests_per_minute: int = 3,
 ) -> BaseEmbeddingProvider:
     """Factory method to get the configured embedding provider.
 
@@ -52,6 +54,14 @@ def get_provider(
         Hard cap on embedding tokens this provider instance will spend
         before refusing further requests (``"voyage"`` only) -- see
         ``EmbeddingBudgetExceededError``.
+    max_tokens_per_request:
+        Maximum estimated tokens per individual embedding API request --
+        larger text batches are split across multiple requests to stay
+        under this (``"voyage"`` only).
+    max_requests_per_minute:
+        Consecutive requests from one provider instance are paced to stay
+        at or under this many requests per minute when a batch must be
+        split across multiple requests (``"voyage"`` only).
 
     Returns
     -------
@@ -78,6 +88,8 @@ def get_provider(
             timeout=timeout,
             max_retries=max_retries,
             max_tokens_per_instance=max_tokens_per_instance,
+            max_tokens_per_request=max_tokens_per_request,
+            max_requests_per_minute=max_requests_per_minute,
         )
 
     if normalized == "openai":
@@ -121,6 +133,8 @@ def get_configured_embedding_provider(settings: Settings) -> BaseEmbeddingProvid
         timeout=settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
         max_retries=settings.EMBEDDING_MAX_RETRIES,
         max_tokens_per_instance=settings.EMBEDDING_MAX_TOKENS_PER_INGESTION,
+        max_tokens_per_request=settings.EMBEDDING_MAX_TOKENS_PER_REQUEST,
+        max_requests_per_minute=settings.EMBEDDING_MAX_REQUESTS_PER_MINUTE,
     )
 
 

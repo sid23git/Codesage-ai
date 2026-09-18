@@ -15,6 +15,8 @@ exercises the real ``<=>`` operator via VectorRetriever.
 from __future__ import annotations
 
 import os
+import random
+import time
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -172,3 +174,54 @@ class TestVoyageRealRetrievalQuality:
             "query -- real Voyage embeddings should separate these clearly."
         )
         assert results[0]["sem_score"] > results[1]["sem_score"]
+
+
+class TestVoyageFreeTierPacedFortySixChunkSimulation:
+    """Simulates re-indexing a FashionRAG-sized repository end to end
+    against the real Voyage API, using this provider's default free-tier
+    limits (EMBEDDING_MAX_TOKENS_PER_REQUEST=8000,
+    EMBEDDING_MAX_REQUESTS_PER_MINUTE=3, no payment method required).
+
+    Chunk count and size distribution (46 chunks, ~896 avg chars, ~4726 max,
+    ~41,200 total chars) match what was observed on the real production
+    `FashionRAG` repository at the time this test was written -- the text
+    content itself is synthetic (deterministically generated, not fetched
+    from production) since only realistic *sizing* matters for proving the
+    batching/pacing behavior, not code semantics.
+    """
+
+    @pytest.mark.asyncio
+    async def test_forty_six_chunk_batch_completes_without_payment_method(self) -> None:
+        provider = _provider()  # default free-tier-safe limits, nothing overridden
+
+        rng = random.Random(42)
+        texts: list[str] = []
+        for _ in range(46):
+            length = min(4726, max(50, int(rng.gauss(896, 700))))
+            line = "def handler(x): return x + 1  # padding\n"
+            body = (line * (length // len(line) + 1))[:length]
+            texts.append(body)
+
+        total_chars = sum(len(t) for t in texts)
+
+        call_count = 0
+        original_embed = provider._client.embed
+
+        async def counting_embed(*args: object, **kwargs: object) -> object:
+            nonlocal call_count
+            call_count += 1
+            return await original_embed(*args, **kwargs)
+
+        provider._client.embed = counting_embed  # type: ignore[method-assign]
+
+        started = time.monotonic()
+        vectors = await provider.embed_texts(texts)
+        elapsed = time.monotonic() - started
+
+        assert len(vectors) == 46
+        assert all(len(v) == 1024 for v in vectors)
+        print(
+            f"\n46-chunk simulation: {total_chars} total chars, "
+            f"{call_count} Voyage API request(s), {elapsed:.1f}s elapsed "
+            f"(no payment method, no RateLimitError raised)."
+        )
