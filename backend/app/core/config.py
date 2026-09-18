@@ -199,12 +199,66 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     EMBEDDING_PROVIDER: str = Field(
         default="mock",
-        description="Embedding provider to use: 'mock' or 'openai'.",
+        description="Embedding provider to use: 'mock', 'openai', or 'voyage'.",
+    )
+    EMBEDDING_MODEL: str = Field(
+        default="voyage-code-4",
+        description=(
+            "Model identifier passed to the configured embedding provider. "
+            "Forwarded unconditionally regardless of EMBEDDING_PROVIDER "
+            "(including to MockEmbeddingProvider), mirroring LLM_MODEL's "
+            "convention below -- update this if you switch providers."
+        ),
+    )
+    EMBEDDING_DIMENSIONS: int = Field(
+        default=1024,
+        gt=0,
+        description=(
+            "Output vector dimension requested from the embedding provider. "
+            "Must match code_chunks.embedding's pgvector column width "
+            "exactly (see alembic migration 0006) -- changing this without "
+            "a matching migration will break every insert."
+        ),
     )
     OPENAI_API_KEY: str | None = Field(
         default=None,
         description=(
             "API key for OpenAI embeddings (required if EMBEDDING_PROVIDER=openai)."
+        ),
+    )
+    VOYAGE_API_KEY: str | None = Field(
+        default=None,
+        description=(
+            "API key for Voyage AI embeddings (required if "
+            "EMBEDDING_PROVIDER=voyage). Never hardcode -- set via "
+            "environment variable."
+        ),
+    )
+    EMBEDDING_REQUEST_TIMEOUT_SECONDS: float = Field(
+        default=60.0,
+        gt=0,
+        description="Timeout in seconds for outbound embedding provider requests.",
+    )
+    EMBEDDING_MAX_RETRIES: int = Field(
+        default=3,
+        ge=0,
+        description=(
+            "Number of automatic retries the embedding provider's own SDK "
+            "performs on transient failures (network errors, 5xx, rate "
+            "limits) before raising."
+        ),
+    )
+    EMBEDDING_MAX_TOKENS_PER_INGESTION: int = Field(
+        default=2_000_000,
+        gt=0,
+        description=(
+            "Hard cap on embedding-provider tokens spent by a single "
+            "ingestion run (one get_embedding_provider()/ingestion-fallback "
+            "provider instance). Fails closed with "
+            "EmbeddingBudgetExceededError once reached, rather than letting "
+            "one oversized or misconfigured repository silently run up "
+            "unbounded embedding-provider spend on a small production "
+            "deployment."
         ),
     )
 

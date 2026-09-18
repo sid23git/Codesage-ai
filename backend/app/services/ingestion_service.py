@@ -25,7 +25,7 @@ from app.ingestion.exceptions import (
 from app.ingestion.filter import FileFilterPolicy
 from app.ingestion.scanner import RepositoryScanner
 from app.models.ingestion import RepositoryIngestion
-from app.rag.embeddings import get_provider
+from app.rag.embeddings import get_configured_embedding_provider
 from app.rag.embeddings.base import BaseEmbeddingProvider
 from app.schemas.ingestion import IngestionStatus
 from app.schemas.repository import RepositoryStatus
@@ -237,9 +237,8 @@ class IngestionService:
             # This is intentionally called BEFORE committing the scan results
             # so that source_root still exists.  RAGService manages its own
             # bounded transaction; no DB connection is held during embedding.
-            app_embedding_provider = embedding_provider or get_provider(
-                name=app_settings.EMBEDDING_PROVIDER,
-                api_key=app_settings.OPENAI_API_KEY,
+            app_embedding_provider = (
+                embedding_provider or get_configured_embedding_provider(app_settings)
             )
             try:
                 chunk_count = await _rag_index(

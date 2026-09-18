@@ -7,8 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.rag.embeddings import (
+    EmbeddingConfigurationError,
     MockEmbeddingProvider,
     OpenAIEmbeddingProvider,
+    VoyageEmbeddingProvider,
     get_provider,
 )
 
@@ -19,8 +21,16 @@ class TestMockEmbeddingProvider:
     @pytest.mark.asyncio
     async def test_dimensions_and_model_name(self) -> None:
         provider = MockEmbeddingProvider()
-        assert provider.dimension == 1536
-        assert provider.model_name == "mock-deterministic-1536"
+        assert provider.dimension == 1024
+        assert provider.model_name == "mock-deterministic-1024"
+
+    @pytest.mark.asyncio
+    async def test_custom_dimension(self) -> None:
+        provider = MockEmbeddingProvider(dimension=256)
+        assert provider.dimension == 256
+        assert provider.model_name == "mock-deterministic-256"
+        vec = await provider.embed_query("some text")
+        assert len(vec) == 256
 
     @pytest.mark.asyncio
     async def test_embed_texts_deterministic(self) -> None:
@@ -31,8 +41,8 @@ class TestMockEmbeddingProvider:
         vecs2 = await provider.embed_texts(texts)
 
         assert len(vecs1) == 2
-        assert len(vecs1[0]) == 1536
-        assert len(vecs1[1]) == 1536
+        assert len(vecs1[0]) == 1024
+        assert len(vecs1[1]) == 1024
         assert vecs1[0] == vecs2[0]
         assert vecs1[1] == vecs2[1]
         assert vecs1[0] != vecs1[1]
@@ -100,11 +110,32 @@ class TestGetProviderFactory:
     def test_get_mock_provider(self) -> None:
         provider = get_provider("mock")
         assert isinstance(provider, MockEmbeddingProvider)
+        assert provider.dimension == 1024
 
     def test_get_openai_provider_success(self) -> None:
         provider = get_provider("openai", api_key="sk-test")
         assert isinstance(provider, OpenAIEmbeddingProvider)
 
     def test_get_openai_provider_missing_key_raises(self) -> None:
-        with pytest.raises(ValueError, match="OPENAI_API_KEY is required"):
+        with pytest.raises(
+            EmbeddingConfigurationError, match="OPENAI_API_KEY is required"
+        ):
             get_provider("openai", api_key=None)
+
+    def test_get_voyage_provider_success(self) -> None:
+        provider = get_provider("voyage", api_key="pa-test")
+        assert isinstance(provider, VoyageEmbeddingProvider)
+        assert provider.dimension == 1024
+        assert provider.model_name == "voyage-code-4"
+
+    def test_get_voyage_provider_missing_key_raises(self) -> None:
+        with pytest.raises(
+            EmbeddingConfigurationError, match="VOYAGE_API_KEY is required"
+        ):
+            get_provider("voyage", api_key=None)
+
+    def test_get_unsupported_provider_raises(self) -> None:
+        with pytest.raises(
+            EmbeddingConfigurationError, match="Unsupported EMBEDDING_PROVIDER"
+        ):
+            get_provider("some-typo-provider")

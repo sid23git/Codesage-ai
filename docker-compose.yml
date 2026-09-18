@@ -70,6 +70,7 @@ services:
       # real provider locally.
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-mock}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:

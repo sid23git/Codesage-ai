@@ -118,9 +118,12 @@ def get_github_client() -> GitHubClient:
 def get_embedding_provider() -> BaseEmbeddingProvider:
     """Provide the configured embedding provider as a FastAPI dependency.
 
-    Reads ``EMBEDDING_PROVIDER`` and ``OPENAI_API_KEY`` from application
-    settings.  Defaults to the ``MockEmbeddingProvider`` when the provider
-    is ``"mock"`` (or when no provider is specified).
+    Reads ``EMBEDDING_PROVIDER`` (``"voyage"``, ``"openai"``, or ``"mock"``)
+    and the matching API key (``VOYAGE_API_KEY``/``OPENAI_API_KEY``) from
+    application settings via ``get_configured_embedding_provider``, the
+    single place that maps ``Settings`` to a provider instance so this
+    dependency and ``IngestionService``'s internal fallback can never pick
+    different (or wrongly-keyed) providers for the same configuration.
 
     **Important**: ``MockEmbeddingProvider`` is for offline/test use only
     and must NOT be relied upon for semantic search quality in production.
@@ -130,13 +133,9 @@ def get_embedding_provider() -> BaseEmbeddingProvider:
     BaseEmbeddingProvider
         The configured embedding provider instance.
     """
-    from app.rag.embeddings import get_provider
+    from app.rag.embeddings import get_configured_embedding_provider
 
-    settings = get_settings()
-    return get_provider(
-        name=settings.EMBEDDING_PROVIDER,
-        api_key=settings.OPENAI_API_KEY,
-    )
+    return get_configured_embedding_provider(get_settings())
 
 
 def get_llm_provider() -> BaseLLMProvider:

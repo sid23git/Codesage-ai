@@ -83,7 +83,9 @@ Create two **Web Services** by hand, each: **New → Web Service → connect thi
 | `RATE_LIMIT_ENABLED` | `true` | No |
 | `RATE_LIMIT_AUTH` / `RATE_LIMIT_ASSISTANT` / `RATE_LIMIT_INGEST` | `10/minute` / `20/minute` / `5/minute` | No |
 | `GITHUB_TOKEN` | *(fine-grained PAT, see §7)* | **Yes** |
-| `EMBEDDING_PROVIDER` | `mock` or `openai` | No |
+| `EMBEDDING_PROVIDER` | `mock`, `voyage`, or `openai` | No |
+| `EMBEDDING_MODEL` | `voyage-code-4` | No |
+| `VOYAGE_API_KEY` | *(only if `EMBEDDING_PROVIDER=voyage`)* | **Yes** |
 | `OPENAI_API_KEY` | *(only if `EMBEDDING_PROVIDER=openai`)* | **Yes** |
 | `LLM_PROVIDER` | `mock` or `anthropic` | No |
 | `LLM_MODEL` | `claude-sonnet-5` | No |

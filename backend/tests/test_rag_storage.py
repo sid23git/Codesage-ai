@@ -54,7 +54,7 @@ class TestCodeChunkStorage:
             end_line=10,
             content_hash="abc123hash",
             chunk_text="def main():\n    pass",
-            embedding=[0.0] * 1536,
+            embedding=[0.0] * 1024,
         )
         db_session.add(chunk)
         await db_session.commit()
@@ -100,7 +100,7 @@ class TestCodeChunkStorage:
             end_line=5,
             content_hash="hash1",
             chunk_text="def main(): pass",
-            embedding=[0.0] * 1536,
+            embedding=[0.0] * 1024,
         )
         db_session.add(chunk)
         await db_session.commit()

@@ -28,7 +28,7 @@ class CodeChunk(Base):
     """Code chunk entity with vector embeddings.
 
     Represents a specific chunk of source code (function, class, block)
-    with a 1536-dimensional embedding vector for semantic search.
+    with a 1024-dimensional embedding vector for semantic search.
     """
 
     __tablename__ = "code_chunks"
@@ -58,8 +58,8 @@ class CodeChunk(Base):
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # 1536-dimensional pgvector column for OpenAI embeddings
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    # 1024-dimensional pgvector column (Voyage voyage-code-4 embeddings)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

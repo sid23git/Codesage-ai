@@ -371,7 +371,7 @@ class TestAskEndpointInsufficientEvidence:
         _override_llm(llm)
         # No keyword/name overlap with the indexed chunk, and
         # MockEmbeddingProvider's hash-seeded vectors are effectively
-        # uncorrelated for unrelated text at 1536 dimensions, so neither
+        # uncorrelated for unrelated text at 1024 dimensions, so neither
         # retriever clears the default LLM_MIN_RELEVANCE_SCORE threshold
         # -- this reaches the insufficient-evidence gate without touching
         # any global configuration.

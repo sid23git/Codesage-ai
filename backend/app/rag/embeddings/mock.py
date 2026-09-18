@@ -15,13 +15,16 @@ class MockEmbeddingProvider(BaseEmbeddingProvider):
     for reliable testing and offline development.
     """
 
+    def __init__(self, dimension: int = 1024) -> None:
+        self._dimension = dimension
+
     @property
     def dimension(self) -> int:
-        return 1536
+        return self._dimension
 
     @property
     def model_name(self) -> str:
-        return "mock-deterministic-1536"
+        return f"mock-deterministic-{self._dimension}"
 
     def _generate_deterministic_vector(self, text: str) -> list[float]:
         """Generates a deterministic, L2-normalized vector from a text hash."""
