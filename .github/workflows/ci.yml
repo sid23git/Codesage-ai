@@ -27,13 +27,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# A CI-only signing key -- never a real secret, never used outside this
-# workflow's ephemeral runners. Backend jobs that invoke `alembic`
-# directly (not through pytest) need it explicitly, since only pytest
-# picks up tests/conftest.py's own equivalent fallback.
-env:
-  CI_SECRET_KEY: ci-pipeline-only-secret-key-never-used-anywhere-else-0000000000
-
 jobs:
   # --------------------------------------------------------------------
   # Frontend: exactly the commands documented in frontend/README.md and
@@ -117,7 +110,14 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     env:
-      SECRET_KEY: ${{ env.CI_SECRET_KEY }}
+      # A CI-only signing key -- never a real secret, never used outside
+      # this workflow's ephemeral runners. This job invokes `alembic`
+      # directly (not through pytest), so it needs one explicitly: only
+      # pytest picks up tests/conftest.py's own equivalent fallback.
+      # Written as a literal because a job-level `env:` cannot read the
+      # `env` context (only github/needs/strategy/matrix/vars/secrets/
+      # inputs are available there).
+      SECRET_KEY: ci-pipeline-only-secret-key-never-used-anywhere-else-0000000000
       DATABASE_URL: postgresql+asyncpg://ci_test:ci_test_password@localhost:5432/codesage_ci
       TEST_DATABASE_URL: postgresql+asyncpg://ci_test:ci_test_password@localhost:5432/codesage_ci
     steps:
