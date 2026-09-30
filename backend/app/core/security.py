@@ -118,6 +118,10 @@ def decode_access_token(token: str) -> dict[str, Any]:
         If the token is malformed, invalid, or signature does not match.
     """
     settings = get_settings()
-    return jwt.decode(  # type: ignore[no-any-return]
+    # Annotated local instead of a `type: ignore`: PyJWT's return type has
+    # varied between releases (Any vs dict[str, Any]), and this type-checks
+    # cleanly against both.
+    payload: dict[str, Any] = jwt.decode(
         token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
     )
+    return payload

@@ -52,15 +52,26 @@ services:
       # (just marginally less optimal) against a direct connection.
       - key: DB_STATEMENT_CACHE_SIZE
         value: "0"
-      # Mock by default -- the app is fully functional with zero paid
-      # keys. Flip both PROVIDER values (and supply the matching key
-      # below) only once real credentials are available.
+      # Real providers in production: Voyage for embeddings, Anthropic for
+      # answers. Both require their API key below (VOYAGE_API_KEY /
+      # ANTHROPIC_API_KEY, secret-only). For a zero-cost deployment without
+      # credentials, set both PROVIDER values to "mock" instead -- the app is
+      # fully functional that way (see docs/deployment/README.md §7).
       - key: EMBEDDING_PROVIDER
-        value: mock
+        value: voyage
+      # Must stay in lockstep with the 1024-dim pgvector column (migration
+      # 0006) -- changing the model means a migration + full re-ingestion.
+      - key: EMBEDDING_MODEL
+        value: voyage-code-4
       - key: LLM_PROVIDER
-        value: mock
+        value: anthropic
       - key: LLM_MODEL
         value: claude-sonnet-5
+      # Evidence gate for Ask/Explain/Review, calibrated for voyage-code-4's
+      # compressed question->code score range on a labelled retrieval
+      # benchmark. Re-benchmark before changing it or the embedding model.
+      - key: LLM_MIN_RELEVANCE_SCORE
+        value: "0.11"
       # ---- secrets: prompted for once at Blueprint creation, stored
       #      by Render, never written to this file ----
       - key: SECRET_KEY

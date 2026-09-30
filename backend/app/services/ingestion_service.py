@@ -10,8 +10,10 @@ import stat
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -356,7 +358,10 @@ class IngestionService:
                 completed_at=datetime.now(UTC),
             )
         )
-        swept_count = result.rowcount or 0
+        # An UPDATE always yields a CursorResult at runtime; newer SQLAlchemy
+        # stubs type AsyncSession.execute() as the generic Result, which has
+        # no rowcount.
+        swept_count = cast("CursorResult[Any]", result).rowcount or 0
 
         if swept_count:
             # The repository's own status mirrors its *latest* ingestion --

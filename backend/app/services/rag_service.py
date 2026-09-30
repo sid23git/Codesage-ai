@@ -25,6 +25,8 @@ from app.rag.chunking import RawChunk, chunk_file
 from app.rag.embeddings.base import BaseEmbeddingProvider
 from app.rag.retrieval.hybrid import fuse
 from app.rag.retrieval.keyword import KeywordRetriever
+from app.rag.retrieval.overview import OverviewRetriever
+from app.rag.retrieval.query_analysis import is_broad_repository_question
 from app.rag.retrieval.vector import VectorRetriever
 from app.schemas.rag import ChunkSearchResult, CodeSearchRequest, RetrievalMode
 
@@ -243,6 +245,9 @@ class RAGService:
         sem_results: list[dict[str, Any]] = []
         lex_results: list[dict[str, Any]] = []
 
+        overview_results: list[dict[str, Any]] = []
+        query_vector: list[float] | None = None
+
         top_k_candidates = request.top_k * 2
 
         if request.mode in (RetrievalMode.HYBRID, RetrievalMode.SEMANTIC):
@@ -268,12 +273,30 @@ class RAGService:
                 file_paths=request.file_paths,
             )
 
+        # Broad repository-level questions ("Explain the architecture of this
+        # repository.") additionally consider README / architecture-doc /
+        # entry-point chunks, which generic questions rarely reach through
+        # embedding similarity alone. Skipped for path/extension-scoped
+        # searches (e.g. /explain on one file), where they would be off-target.
+        if (
+            is_broad_repository_question(request.query)
+            and not request.file_extensions
+            and not request.file_paths
+        ):
+            overview_results = await OverviewRetriever().search(
+                db=db,
+                repository_id=repository_id,
+                ingestion_id=ingestion_id,
+                query_vector=query_vector,
+            )
+
         results = fuse(
             sem_results=sem_results,
             lex_results=lex_results,
             query=request.query,
             top_k=request.top_k,
             min_score=request.min_score,
+            overview_results=overview_results,
         )
 
         return results, ingestion_id

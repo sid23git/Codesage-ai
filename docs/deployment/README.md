@@ -46,8 +46,9 @@ This is a runbook, not automation — M8 Phase 3 could not provision real cloud 
    | `SECRET_KEY` | Generate with `python -c "import secrets; print(secrets.token_hex(32))"`. A **real, unique** secret — never reuse the local-dev or CI values from earlier phases. |
    | `DATABASE_URL` | The converted Neon connection string from step 1.4 above. |
    | `GITHUB_TOKEN` | See §7 below — create this first if you want real ingestion to work beyond GitHub's 60 req/h unauthenticated limit. |
-   | `OPENAI_API_KEY` | Leave blank to keep `EMBEDDING_PROVIDER=mock` (see §8). Fill in only if you're providing a real key. |
-   | `ANTHROPIC_API_KEY` | Leave blank to keep `LLM_PROVIDER=mock` (see §8). Fill in only if you're providing a real key. |
+   | `OPENAI_API_KEY` | Leave blank — production embeddings use Voyage. Only needed if you switch `EMBEDDING_PROVIDER` to `openai`. |
+   | `VOYAGE_API_KEY` | Required: the blueprint sets `EMBEDDING_PROVIDER=voyage`. (Or set `EMBEDDING_PROVIDER=mock` in the dashboard to run without it — see §7.) |
+   | `ANTHROPIC_API_KEY` | Required: the blueprint sets `LLM_PROVIDER=anthropic`. (Or set `LLM_PROVIDER=mock` in the dashboard to run without it — see §7.) |
 
 3. Deploy. Render builds `backend/Dockerfile`, then `frontend/Dockerfile`.
 4. Once the backend service exists, confirm its actual public URL in Render's dashboard (top of the service page). It should match `https://codesage-backend.onrender.com` (Render assigns this deterministically from the `name:` field) — if it doesn't (e.g. the name was taken and Render suffixed it), update `codesage-frontend`'s `BACKEND_URL` env var to match, then redeploy the frontend service.
@@ -90,6 +91,7 @@ Create two **Web Services** by hand, each: **New → Web Service → connect thi
 | `LLM_PROVIDER` | `mock` or `anthropic` | No |
 | `LLM_MODEL` | `claude-sonnet-5` | No |
 | `ANTHROPIC_API_KEY` | *(only if `LLM_PROVIDER=anthropic`)* | **Yes** |
+| `LLM_MIN_RELEVANCE_SCORE` | `0.11` (evidence gate; calibrated for `voyage-code-4` — re-benchmark before changing it or the embedding model) | No |
 
 **The backend never exposes any of this to the frontend or the browser.** The frontend's only knowledge of the backend is `BACKEND_URL` (a public HTTPS URL, not a secret) — no backend env var is ever read by, or forwarded into, the frontend container. See §5 for exactly why that boundary holds.
 
@@ -148,7 +150,7 @@ Create a **fine-grained personal access token** (GitHub → Settings → Develop
 
 ## 7. LLM / embedding providers
 
-**Deploy and verify with mock providers first** (`LLM_PROVIDER=mock`, `EMBEDDING_PROVIDER=mock` — `render.yaml`'s defaults). The entire application — register, ingest, Ask, Explain, Review, conversation history — is fully functional this way, with deterministic mock responses, zero cost, and zero external dependency on Anthropic/OpenAI being reachable.
+**`render.yaml` now declares the real production providers** (`EMBEDDING_PROVIDER=voyage`, `EMBEDDING_MODEL=voyage-code-4`, `LLM_PROVIDER=anthropic`, `LLM_MODEL=claude-sonnet-5`), which require `VOYAGE_API_KEY` and `ANTHROPIC_API_KEY` to be set as secrets. For a first deployment without credentials, **deploy and verify with mock providers** instead (`LLM_PROVIDER=mock`, `EMBEDDING_PROVIDER=mock`). The entire application — register, ingest, Ask, Explain, Review, conversation history — is fully functional this way, with deterministic mock responses, zero cost, and zero external dependency on Anthropic/OpenAI being reachable.
 
 **If real credentials become available:** set `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY`, and/or `EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY`, redeploy, and re-run the Ask/Explain/Review portion of the smoke test in §9 against the real providers.
 

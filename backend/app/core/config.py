@@ -330,7 +330,13 @@ class Settings(BaseSettings):
         ),
     )
     LLM_MIN_RELEVANCE_SCORE: float = Field(
-        default=0.35,
+        # Calibrated against voyage-code-4 on a labelled retrieval benchmark:
+        # question->code cosine similarities sit on a compressed scale
+        # (relevant evidence ~0.10-0.50 fused), so the old 0.35 rejected most
+        # relevant chunks. 0.11 sits just above the 0.10 path bonus so no
+        # chunk can clear the gate on a filename coincidence alone. Re-tune
+        # (via this env var) if the embedding model changes.
+        default=0.11,
         ge=0.0,
         le=1.0,
         description=(

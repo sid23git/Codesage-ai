@@ -205,7 +205,7 @@ jobs:
       # live HTTP smoke test against the containerized backend), not a
       # gap in what this job actually proves about the retrieval layer.
       - name: Postgres retrieval tests (vector + keyword, real engine)
-        run: pytest tests/test_rag_retrieval.py -v
+        run: pytest tests/test_rag_retrieval.py tests/test_retrieval_quality.py -v
 
   # --------------------------------------------------------------------
   # Dependency vulnerability audit. npm audit natively supports a

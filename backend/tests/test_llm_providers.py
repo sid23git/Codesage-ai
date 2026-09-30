@@ -404,7 +404,7 @@ class TestLLMSettings:
         assert settings.LLM_MAX_OUTPUT_TOKENS == 2000
         assert settings.LLM_CONTEXT_TOKEN_BUDGET == 12000
         assert settings.LLM_MAX_HISTORY_MESSAGES == 8
-        assert settings.LLM_MIN_RELEVANCE_SCORE == 0.35
+        assert settings.LLM_MIN_RELEVANCE_SCORE == 0.11
 
     def test_llm_settings_overridable(self) -> None:
         settings = Settings(
