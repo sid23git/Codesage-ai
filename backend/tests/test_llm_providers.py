@@ -142,7 +142,7 @@ class TestGetLLMProviderFactory:
     def test_get_anthropic_provider_success(self) -> None:
         provider = get_llm_provider("anthropic", api_key="sk-ant-test")
         assert isinstance(provider, AnthropicProvider)
-        assert provider.model_name == "claude-sonnet-5"
+        assert provider.model_name == "claude-sonnet-5-5"
 
     def test_get_anthropic_provider_custom_model(self) -> None:
         provider = get_llm_provider(
@@ -175,7 +175,7 @@ class TestAnthropicProviderResponseNormalization:
         text_block = MagicMock(type="text", text="The answer is 42.")
         mock_message = MagicMock(
             content=[text_block],
-            model="claude-sonnet-5",
+            model="claude-sonnet-5-5",
             usage=MagicMock(input_tokens=123, output_tokens=45),
         )
         create_mock = AsyncMock(return_value=mock_message)
@@ -192,7 +192,7 @@ class TestAnthropicProviderResponseNormalization:
 
         assert isinstance(response, LLMResponse)
         assert response.content == "The answer is 42."
-        assert response.model == "claude-sonnet-5"
+        assert response.model == "claude-sonnet-5-5"
         assert response.input_tokens == 123
         assert response.output_tokens == 45
 
@@ -203,7 +203,7 @@ class TestAnthropicProviderResponseNormalization:
         assert call_kwargs["messages"] == [{"role": "user", "content": "What is 6*7?"}]
         assert call_kwargs["max_tokens"] == 100
         assert call_kwargs["temperature"] == 0.0
-        assert call_kwargs["model"] == "claude-sonnet-5"
+        assert call_kwargs["model"] == "claude-sonnet-5-5"
 
     @pytest.mark.asyncio
     async def test_complete_concatenates_text_blocks_only(self) -> None:
@@ -214,7 +214,7 @@ class TestAnthropicProviderResponseNormalization:
             MagicMock(type="tool_use", text="ignored"),
             MagicMock(type="text", text="world."),
         ]
-        mock_message = MagicMock(content=blocks, model="claude-sonnet-5", usage=None)
+        mock_message = MagicMock(content=blocks, model="claude-sonnet-5-5", usage=None)
         provider._client.messages.create = AsyncMock(return_value=mock_message)
 
         response = await provider.complete(
@@ -230,7 +230,7 @@ class TestAnthropicProviderResponseNormalization:
         provider = AnthropicProvider(api_key="sk-ant-test")
         mock_message = MagicMock(
             content=[MagicMock(type="text", text="ok")],
-            model="claude-sonnet-5",
+            model="claude-sonnet-5-5",
             usage=MagicMock(input_tokens=1, output_tokens=1),
         )
         create_mock = AsyncMock(return_value=mock_message)
@@ -245,7 +245,7 @@ class TestAnthropicProviderResponseNormalization:
         provider = AnthropicProvider(api_key="sk-ant-test")
         mock_message = MagicMock(
             content=[MagicMock(type="text", text="ok")],
-            model="claude-sonnet-5",
+            model="claude-sonnet-5-5",
             usage=None,
         )
         create_mock = AsyncMock(return_value=mock_message)
@@ -398,7 +398,7 @@ class TestLLMSettings:
 
         settings = Settings(_env_file=None, **self._BASE_KWARGS)  # type: ignore[call-arg]
         assert settings.LLM_PROVIDER == "mock"
-        assert settings.LLM_MODEL == "claude-sonnet-5"
+        assert settings.LLM_MODEL == "claude-sonnet-5-5"
         assert settings.ANTHROPIC_API_KEY is None
         assert settings.LLM_REQUEST_TIMEOUT_SECONDS == 60.0
         assert settings.LLM_MAX_OUTPUT_TOKENS == 2000

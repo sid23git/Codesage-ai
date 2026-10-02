@@ -294,7 +294,7 @@ class Settings(BaseSettings):
         description="LLM provider to use: 'mock' or 'anthropic'.",
     )
     LLM_MODEL: str = Field(
-        default="claude-sonnet-5",
+        default="claude-sonnet-5-5",
         description="Model identifier passed to the configured LLM provider.",
     )
     ANTHROPIC_API_KEY: str | None = Field(

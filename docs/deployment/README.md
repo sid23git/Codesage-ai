@@ -89,7 +89,7 @@ Create two **Web Services** by hand, each: **New → Web Service → connect thi
 | `VOYAGE_API_KEY` | *(only if `EMBEDDING_PROVIDER=voyage`)* | **Yes** |
 | `OPENAI_API_KEY` | *(only if `EMBEDDING_PROVIDER=openai`)* | **Yes** |
 | `LLM_PROVIDER` | `mock` or `anthropic` | No |
-| `LLM_MODEL` | `claude-sonnet-5` | No |
+| `LLM_MODEL` | `claude-sonnet-5-5` | No |
 | `ANTHROPIC_API_KEY` | *(only if `LLM_PROVIDER=anthropic`)* | **Yes** |
 | `LLM_MIN_RELEVANCE_SCORE` | `0.11` (evidence gate; calibrated for `voyage-code-4` — re-benchmark before changing it or the embedding model) | No |
 
@@ -150,7 +150,7 @@ Create a **fine-grained personal access token** (GitHub → Settings → Develop
 
 ## 7. LLM / embedding providers
 
-**`render.yaml` now declares the real production providers** (`EMBEDDING_PROVIDER=voyage`, `EMBEDDING_MODEL=voyage-code-4`, `LLM_PROVIDER=anthropic`, `LLM_MODEL=claude-sonnet-5`), which require `VOYAGE_API_KEY` and `ANTHROPIC_API_KEY` to be set as secrets. For a first deployment without credentials, **deploy and verify with mock providers** instead (`LLM_PROVIDER=mock`, `EMBEDDING_PROVIDER=mock`). The entire application — register, ingest, Ask, Explain, Review, conversation history — is fully functional this way, with deterministic mock responses, zero cost, and zero external dependency on Anthropic/OpenAI being reachable.
+**`render.yaml` now declares the real production providers** (`EMBEDDING_PROVIDER=voyage`, `EMBEDDING_MODEL=voyage-code-4`, `LLM_PROVIDER=anthropic`, `LLM_MODEL=claude-sonnet-5-5`), which require `VOYAGE_API_KEY` and `ANTHROPIC_API_KEY` to be set as secrets. For a first deployment without credentials, **deploy and verify with mock providers** instead (`LLM_PROVIDER=mock`, `EMBEDDING_PROVIDER=mock`). The entire application — register, ingest, Ask, Explain, Review, conversation history — is fully functional this way, with deterministic mock responses, zero cost, and zero external dependency on Anthropic/OpenAI being reachable.
 
 **If real credentials become available:** set `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY`, and/or `EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY`, redeploy, and re-run the Ask/Explain/Review portion of the smoke test in §9 against the real providers.
 

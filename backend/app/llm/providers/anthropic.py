@@ -25,7 +25,7 @@ from app.llm.providers.base import BaseLLMProvider, LLMMessage, LLMResponse
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "claude-sonnet-5"
+_DEFAULT_MODEL = "claude-sonnet-5-5"
 
 
 class AnthropicProvider(BaseLLMProvider):

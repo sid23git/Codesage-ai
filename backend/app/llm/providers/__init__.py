@@ -7,7 +7,7 @@ from app.llm.providers.anthropic import AnthropicProvider
 from app.llm.providers.base import BaseLLMProvider, LLMMessage, LLMResponse
 from app.llm.providers.mock import MockLLMProvider
 
-_DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5"
+_DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5"
 _DEFAULT_MOCK_MODEL = "mock-llm"
 
 

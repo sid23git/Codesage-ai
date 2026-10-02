@@ -66,7 +66,7 @@ services:
       - key: LLM_PROVIDER
         value: anthropic
       - key: LLM_MODEL
-        value: claude-sonnet-5
+        value: claude-sonnet-5-5
       # Evidence gate for Ask/Explain/Review, calibrated for voyage-code-4's
       # compressed question->code score range on a labelled retrieval
       # benchmark. Re-benchmark before changing it or the embedding model.
