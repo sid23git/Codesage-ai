@@ -202,7 +202,8 @@ class TestAnthropicProviderResponseNormalization:
         assert call_kwargs["system"] == "Be concise."
         assert call_kwargs["messages"] == [{"role": "user", "content": "What is 6*7?"}]
         assert call_kwargs["max_tokens"] == 100
-        assert call_kwargs["temperature"] == 0.0
+        # Current Claude models reject sampling parameters with a 400.
+        assert "temperature" not in call_kwargs
         assert call_kwargs["model"] == "claude-sonnet-5-5"
 
     @pytest.mark.asyncio

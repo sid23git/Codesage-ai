@@ -61,10 +61,14 @@ class AnthropicProvider(BaseLLMProvider):
             if m.role != "system"
         ]
 
+        # ``temperature`` is accepted for interface parity but never sent:
+        # current Claude models reject sampling parameters (a non-default
+        # temperature is a 400 invalid_request_error), so every call would
+        # fail with BadRequestError.
+        del temperature
         kwargs: dict[str, Any] = {
             "model": self._model,
             "max_tokens": max_tokens,
-            "temperature": temperature,
             "messages": chat_messages,
         }
         if system_parts:
@@ -84,7 +88,14 @@ class AnthropicProvider(BaseLLMProvider):
                 "Anthropic rejected the configured API key."
             ) from exc
         except anthropic.APIError as exc:
-            logger.warning("Anthropic API request failed: %s", type(exc).__name__)
+            # Log the provider's own error message (never the API key) so a
+            # rejected request can be diagnosed from the server logs; the
+            # client-facing detail below stays generic.
+            logger.warning(
+                "Anthropic API request failed: %s: %s",
+                type(exc).__name__,
+                getattr(exc, "message", ""),
+            )
             raise LLMProviderError(
                 f"Anthropic API request failed ({type(exc).__name__})."
             ) from exc
